@@ -6,14 +6,6 @@ import java.io.FileNotFoundException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.io.FileOutputStream;
-import java.awt.event.MouseWheelEvent;
-import java.awt.event.MouseWheelListener;
-import java.awt.datatransfer.Clipboard;
-import java.awt.datatransfer.Transferable;
-import java.awt.datatransfer.DataFlavor;
-import java.awt.datatransfer.UnsupportedFlavorException;
-import java.awt.Toolkit;
-import processing.video.Movie;
 import org.freedesktop.gstreamer.*;
 import java.util.TreeSet;
 import java.io.InputStream;
@@ -22,11 +14,6 @@ import java.net.URL;
 import java.util.zip.*;
 import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
-import java.awt.datatransfer.StringSelection;
-import java.awt.Toolkit;
-import java.awt.datatransfer.Clipboard;
-import gifAnimation.*;
-import javax.sound.sampled.*;
 import java.io.ByteArrayInputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -37,24 +24,35 @@ import java.nio.file.Paths;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.nio.file.*;
-import java.awt.Desktop;
 import java.nio.file.attribute.*;
 import java.util.ArrayList;
 import java.util.List;
 import com.sun.jna.Native;
 import com.sun.jna.Structure;
+import processing.video.Movie;
+import gifAnimation.*;
+import java.net.URLClassLoader;
+import java.net.URL;
+import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
+import java.io.InputStreamReader;
+import java.util.Iterator;   // Used by the stack class at the bottom
+import java.util.Arrays;   // Used by the stack class at the bottom
+
 
 // Timeway's engine code.
 // TODO: add documentation lmao.
 
-class Engine {
+public class TWEngine {
   //*****************CONSTANTS SETTINGS**************************
   // Info and versioning
-  public final String NAME        = "Sketch-IO";
-  public final String AUTHOR      = "Teo Taylor";
-  public final String VERSION     = "0.0.0";
-  public final String VERSION_DESCRIPTION = "Initial";
-  
+  public static final String APP_NAME        = "SketchIO";
+  public static final String AUTHOR      = "Teo Taylor";
+  public static final String VERSION     = "0.1.3-alpha";
+  public static final String VERSION_DESCRIPTION = 
+    "- Added previews to entries in pixel realm\n"+
+    "- Performance improvements\n"+
+    "- Timeway now runs on Android!\n";
   // ***************************
   // How versioning works:
   // a.b.c
@@ -64,32 +62,31 @@ class Engine {
   // a, b, and c can go well over 10, 100, it can be any positive integer.
 
   // Paths
-  public final String ENTRIES_PATH        = "data/legacyentry/";
-  public final String ENTRY_DEFAULT_NAME  = "entry";
-  public final String CONSOLE_FONT        = "data/engine/font/SourceCodePro-Regular.ttf";
-  public final String IMG_PATH            = "data/engine/img/";
-  public final String FONT_PATH           = "data/engine/font/";
-  public final String DEFAULT_FONT_PATH   = "data/engine/font/Typewriter.vlw";
-  public final String SHADER_PATH         = "data/engine/shaders/";
-  public final String SOUND_PATH          = "data/engine/sounds/";
-  public final String CONFIG_PATH         = "data/config.json";
-  public final String KEYBIND_PATH        = "data/keybindings.json";
-  public final String STATS_FILE          = "data/stats.json";
-  public final String PATH_SPRITES_ATTRIB = "data/engine/spritedata/";
-  public final String DAILY_ENTRY         = "data/daily_entry.timewayentry";
-  public final String GLITCHED_REALM      = "data/engine/default/glitched_realm/";
-  public final String CACHE_INFO          = "data/cache/cache_info.json";
-  public final String CACHE_PATH          = "data/cache/";
-  public final String WINDOWS_CMD         = "data/engine/shell/mywindowscommand.bat";
-  public final String POCKET_PATH         = "data/pocket/";
-  public final String TEMPLATES_PATH      = "data/engine/realmtemplates/";
-  public final String DEFAULT_MUSIC_PATH  = "data/engine/music/default.wav";
+  public final String CONSOLE_FONT        = "engine/font/SourceCodePro-Regular.ttf";
+  public final String IMG_PATH            = "engine/img/";
+  public final String FONT_PATH           = "engine/font/";
+  public final String DEFAULT_FONT_PATH   = "engine/font/Typewriter.vlw";
+  public final String SHADER_PATH         = "engine/shaders/";
+  public final String SOUND_PATH          = "engine/sounds/";
+  public final String CONFIG_PATH         = "config.json";
+  public final String KEYBIND_PATH        = "keybindings.json";
+  public final String STATS_FILE          = "stats.json";
+  public final String PATH_SPRITES_ATTRIB = "engine/spritedata/";
+  public final String CACHE_INFO          = "cache_info.json";
+  public       String CACHE_PATH          = "cache/";
+  public final String WINDOWS_CMD         = "engine/shell/mywindowscommand.bat";
+  public final String POCKET_PATH         = "pocket/";
+  public final String TEMPLATES_PATH      = "engine/realmtemplates/";
+  public final String EVERYTHING_TXT_PATH = "engine/everything.txt";
+  public final String DEFAULT_MUSIC_PATH  = "engine/music/default.wav";
   public       String DEFAULT_UPDATE_PATH = "";  // Set up by setup()
+  public final String BOILERPLATE_PATH    = "engine/plugindata/plugin_boilerplate.java";
 
   // Static constants
   public static final float   KEY_HOLD_TIME       = 30.; // 30 frames
   public static final int     POWER_CHECK_INTERVAL = 5000;
   public static final String  CACHE_COMPATIBILITY_VERSION = "0.3";
+  public static final String  CACHE_FILE_TYPE = "png";
   public static final boolean CACHE_MUSIC = true;
   
 
@@ -107,7 +104,7 @@ class Engine {
   //**************ENGINE SETUP CODE AND VARIABLES****************
   // Core stuff
   public PApplet app;
-  public String APPPATH = sketchPath().replace('\\', '/')+"/";
+  public String APPPATH = sketchPath().replace('\\', '/')+"/data/";
   
   // Modules
   public Console console;
@@ -117,9 +114,11 @@ class Engine {
   public PowerModeModule power;
   public AudioModule sound;
   public FilemanagerModule file;
+  public StatsModule stats;
   public ClipboardModule clipboard;
   public UIModule ui;
   public InputModule input;
+  public TWEngine.PluginModule plugins;
 
 
   
@@ -138,9 +137,6 @@ class Engine {
   // Settings & config
   public boolean devMode = false;
 
-  // Save & load
-  public JSONArray loadedJsonArray;
-
   // Other / doesn't fit into any categories.
   public boolean wireframe;
   public SpriteSystemPlaceholder spriteSystemPlaceholder;
@@ -151,6 +147,7 @@ class Engine {
   public boolean playWhileUnfocused = true;
   public HashMap<Long, Float> noiseCache = new HashMap<Long, Float>();
   public HashSet<Float> noiseCacheConflicts = new HashSet<Float>();
+  public boolean focusedMode = true;
   
   
   
@@ -246,8 +243,17 @@ class Engine {
       
       public SettingsModule() {
         loadDefaultSettings();
-        settings = loadConfig(APPPATH+CONFIG_PATH, defaultSettings);
-        keybindings = loadConfig(APPPATH+KEYBIND_PATH, defaultKeybindings);
+        if (!isAndroid()) {
+          // Normal you expect it.
+          settings = loadConfig(APPPATH+CONFIG_PATH, defaultSettings);
+          keybindings = loadConfig(APPPATH+KEYBIND_PATH, defaultKeybindings);
+        }
+        else {
+          // However, in android, we're not allowed to write to the usual place.
+          // Android gives you a specific variable dir to write to, so we must use that instead.
+          settings = loadConfig(getAndroidWriteableDir()+CONFIG_PATH, defaultSettings);
+          keybindings = loadConfig(getAndroidWriteableDir()+KEYBIND_PATH, defaultKeybindings);
+        }
       }
       
       public char getKeybinding(String keybindName) {
@@ -311,15 +317,21 @@ class Engine {
       public final int LEFT_CLICK = 1;
       public final int RIGHT_CLICK = 2;
       
+      // BIG TODO: we really need to isolate this into seperate screen objects rather than the engine.
       public void loadDefaultSettings() {
         defaultSettings = new HashMap<String, Object>();
         defaultSettings.putIfAbsent("fullscreen", false);
         defaultSettings.putIfAbsent("scrollSensitivity", 20.0);
         defaultSettings.putIfAbsent("dynamicFramerate", true);
         defaultSettings.putIfAbsent("lowBatteryPercent", 50.0);
-        defaultSettings.putIfAbsent("autoScaleDown", true);
+        defaultSettings.putIfAbsent("autoScaleDown", false);
         defaultSettings.putIfAbsent("defaultSystemFont", "Typewriter");
-        defaultSettings.putIfAbsent("homeDirectory", System.getProperty("user.home").replace('\\', '/'));
+        if (isAndroid()) {
+          defaultSettings.putIfAbsent("homeDirectory", "/storage/emulated/0/");
+        }
+        else {
+          defaultSettings.putIfAbsent("homeDirectory", System.getProperty("user.home").replace('\\', '/'));
+        }
         defaultSettings.putIfAbsent("forcePowerMode", "NONE");
         defaultSettings.putIfAbsent("volumeNormal", 1.0);
         defaultSettings.putIfAbsent("volumeQuiet", 0.0);
@@ -327,9 +339,37 @@ class Engine {
         defaultSettings.putIfAbsent("waitForGStreamerStartup", true);
         defaultSettings.putIfAbsent("enableExperimentalGifs", false);
         defaultSettings.putIfAbsent("cache_miss_no_music", true);
+        defaultSettings.putIfAbsent("touch_controls", false);
     
         defaultKeybindings = new HashMap<String, Character>();
         defaultKeybindings.putIfAbsent("CONFIG_VERSION", char(1));
+        defaultKeybindings.putIfAbsent("moveForewards", 'w');
+        defaultKeybindings.putIfAbsent("moveBackwards", 's');
+        defaultKeybindings.putIfAbsent("moveLeft", 'a');
+        defaultKeybindings.putIfAbsent("moveRight", 'd');
+        defaultKeybindings.putIfAbsent("lookLeft", 'q');
+        defaultKeybindings.putIfAbsent("lookRight", 'e');
+        defaultKeybindings.putIfAbsent("lookLeftTouch", char(253));
+        defaultKeybindings.putIfAbsent("lookRightTouch", char(254));
+        defaultKeybindings.putIfAbsent("menu", '\t');
+        defaultKeybindings.putIfAbsent("menuSelect", '\t');
+        defaultKeybindings.putIfAbsent("jump", ' ');
+        defaultKeybindings.putIfAbsent("sneak", char(0x0F));
+        defaultKeybindings.putIfAbsent("dash", 'r');
+        defaultKeybindings.putIfAbsent("scaleUp", '=');
+        defaultKeybindings.putIfAbsent("scaleDown", '-');
+        defaultKeybindings.putIfAbsent("scaleUpSlow", '+');
+        defaultKeybindings.putIfAbsent("scaleDownSlow", '_');
+        defaultKeybindings.putIfAbsent("primaryAction", 'o');
+        defaultKeybindings.putIfAbsent("secondaryAction", 'p');
+        defaultKeybindings.putIfAbsent("inventorySelectLeft", ',');
+        defaultKeybindings.putIfAbsent("inventorySelectRight", '.');
+        defaultKeybindings.putIfAbsent("scaleDownSlow", '_');
+        defaultKeybindings.putIfAbsent("showCommandPrompt", '/');
+        defaultKeybindings.putIfAbsent("prevDirectory", char(8));
+        defaultKeybindings.putIfAbsent("nextSubTool", ']');
+        defaultKeybindings.putIfAbsent("prevSubTool", '[');
+        for (int i = 0; i < 10; i++) defaultKeybindings.putIfAbsent("quickWarp"+str(i), str(i).charAt(0));
       }
       
       public JSONObject loadConfig(String configPath, HashMap defaultConfig) {
@@ -412,7 +452,7 @@ class Engine {
   public class PowerModeModule {
     
   // Power modes
-    private PowerMode powerMode = PowerMode.HIGH;
+    public PowerMode powerMode = PowerMode.HIGH;
     private boolean noBattery = false;
     private boolean sleepyMode = false;
     private boolean dynamicFramerate = true;
@@ -696,7 +736,7 @@ class Engine {
         lastPowerCheck = millis()+POWER_CHECK_INTERVAL;
   
         // If we specifically requested slow, then go right ahead.
-        if (powerSaver || sleepyMode) {
+        if (sleepyMode) {
           prevPowerMode = powerMode;
           fpsTrackingMode = SLEEPY;
           setPowerMode(PowerMode.SLEEPY);
@@ -709,7 +749,7 @@ class Engine {
       //  return;
       //}
       
-      if (powerSaver || sleepyMode) return;
+      if (sleepyMode) return;
         
       // If forced power mode is enabled, don't bother with the powermode selection algorithm below.
       if (forcePowerModeEnabled) {
@@ -835,8 +875,15 @@ class Engine {
                 n = 1;
                 break;
               case NORMAL:
-                setPowerMode(PowerMode.HIGH);
-                n = 1;
+                // Cap it out at 30fps when in power saver mode.
+                if (getPowerSaver()) {
+                  fpsScore = FPS_SCORE_RECOVERY;
+                  n = 2;
+                }
+                else {
+                  setPowerMode(PowerMode.HIGH);
+                  n = 1;
+                }
                 break;
               case SLEEPY:
                 setPowerMode(PowerMode.NORMAL);
@@ -971,7 +1018,7 @@ class Engine {
     private float displayScale = 2.0;
     public PImage errorImg;
     public PShader errShader;
-    private HashMap<String, PImage> systemImages = new HashMap<String, PImage>();;
+    private HashMap<String, DImage> systemImages = new HashMap<String, DImage>();;
     public HashMap<String, PFont> fonts = new HashMap<String, PFont>();;
     private HashMap<String, PShaderEntry> shaders = new HashMap<String, PShaderEntry>();;
     public  float WIDTH = 0, HEIGHT = 0;
@@ -982,8 +1029,16 @@ class Engine {
     private float time = 0.;
     private float selectBorderTime = 0.;
     public boolean showCPUBenchmarks = false;
+    private PGraphics currentPG;
+    private boolean allAtOnce = false;
+    private LargeImage white;
+    private IntBuffer clearList;
+    private int clearListIndex = 0;
+    public boolean showMemUsage = false;
+    public boolean phoneMode = false;
     
     public final float BASE_FRAMERATE = 60.;
+    public final int CLEARLIST_SIZE = 4096;
     private float delta = 0.;
     
     private boolean showFPS = false;
@@ -1088,10 +1143,19 @@ class Engine {
         displayScale = width/1500.;
         WIDTH = width/displayScale;
         HEIGHT = height/displayScale;
+        
+        if (HEIGHT > WIDTH) {
+          displayScale *= 2.;
+          phoneMode = true;
+        }
+        
         console.info("init: width/height set to "+str(WIDTH)+", "+str(HEIGHT));
+        
+        clearList = IntBuffer.allocate(CLEARLIST_SIZE);
     
         generateErrorImg();
         generateErrorShader();
+        currentPG = g;
         
         resetTimes();
     }
@@ -1150,24 +1214,50 @@ class Engine {
     }
     
     public void loadShader(String path) {
+      // Ignore the warning in android cus we can't check if our files exist.
       if (!file.exists(path)) {
         console.bugWarn("loadShader: "+path+" doesn't exist.");
         return;
       }
       String name = file.getIsolatedFilename(path);
+      String ext  = file.getExt(path);
       
-      PShader s = app.loadShader(path);
-      PShaderEntry shaderentry = new PShaderEntry(s, path);
       
-      shaders.put(name, shaderentry);
+      try {
+        // If we're loading a vertex shader, we also have to load the corresponding 
+        // fragment shader.
+        if (ext.equals("vert")) {
+          String fragPath = file.getDirLegacy(path)+"/"+name+".frag";
+          // Again can't check if file exists on android, so just trust that it's there.
+          if (file.exists(fragPath)) {
+            PShader s = app.loadShader(fragPath, path);
+            PShaderEntry shaderentry = new PShaderEntry(s, path);
+            shaders.put(name, shaderentry);
+            return;
+          }
+          else {
+            // File not found, continue to the normal fragment-only code.
+            console.warn("loadShader: corresponding "+name+" fragment shader file not found.");
+          }
+        }
+      
+        PShader s = app.loadShader(path);
+        PShaderEntry shaderentry = new PShaderEntry(s, path);
+        shaders.put(name, shaderentry);
+      }
+      catch (RuntimeException e) {
+        console.warn(path+" couldn't be loaded due to runtime exception.");
+      }
     }
   
-    public PImage getImg(String name) {
+    public DImage getImg(String name) {
       if (systemImages.get(name) != null) {
         return systemImages.get(name);
       } else {
         console.warnOnce("Image "+name+" doesn't exist.");
-        return errorImg;
+        
+        // TODO: Make it actually return something.
+        return null;
       }
     }
   
@@ -1190,31 +1280,41 @@ class Engine {
       }
     }
     
-    public void largeImg(LargeImage largeimg) {
-      largeImg(g, largeimg);
+    public void largeImg(LargeImage largeimg, float x, float y, float w, float h) {
+      largeImg(g, largeimg, x, y, w, h);
     }
     
-    public void largeImg(PGraphics currentPG, LargeImage largeimg) {
-      pgl = currentPG.beginPGL();
+    public void bind(LargeImage img) {
+      bind(g, img);
+    }
+    
+    public void uploadAllAtOnce(boolean tf) {
+      allAtOnce = tf;
+    }
+    
+    public void bind(PGraphics currentPG, LargeImage img) {
+      if (img == null) {
+        return;
+      }
       
+      pgl = currentPG.beginPGL();
       // If image data is in GPU, we can just bind it and continue about our day.
-      if (largeimg.inGPU) {
+      if (img.inGPU) {
         // Bind the texture
         pgl.activeTexture(PGL.TEXTURE0);
-        pgl.bindTexture(PGL.TEXTURE_2D, largeimg.glTexID);
+        pgl.bindTexture(PGL.TEXTURE_2D, img.glTexID);
       }
       // Otherwise, creation of the LargeImage hasn't put the GPU into GPU mem yet (because of multithreading issues)
       // so we must generate the buffers and put em on the GPU.
-      else if (uploadGPUOnce) {
+      else if (uploadGPUOnce || allAtOnce) {
         // Create the texture buffer and put data into gpu mem.
-        pgl = currentPG.beginPGL();
         IntBuffer intBuffer = IntBuffer.allocate(1);
         pgl.genTextures(1, intBuffer);
-        largeimg.glTexID = intBuffer.get(0);
+        img.glTexID = intBuffer.get(0);
         pgl.activeTexture(PGL.TEXTURE0);
-        pgl.bindTexture(PGL.TEXTURE_2D, largeimg.glTexID);
-        pgl.texImage2D(PGL.TEXTURE_2D, 0, PGL.RGBA, (int)largeimg.width, (int)largeimg.height, 0, PGL.RGBA, PGL.UNSIGNED_BYTE, largeimg.texData);
-        largeimg.inGPU = true;
+        pgl.bindTexture(PGL.TEXTURE_2D, img.glTexID);
+        pgl.texImage2D(PGL.TEXTURE_2D, 0, PGL.RGBA, (int)img.width, (int)img.height, 0, PGL.RGBA, PGL.UNSIGNED_BYTE, img.texData);
+        img.inGPU = true;
         uploadGPUOnce = false;
         
         //pgl.texParameteri(PGL.TEXTURE_2D, PGL.TEXTURE_MAG_FILTER, PGL.LINEAR);
@@ -1223,8 +1323,15 @@ class Engine {
       else {
         // uploadGPUOnce is false which means a LargeImage has taken our turn to upload our shiz into the GPU
         // and we must wait for a chance next frame.
-        // For now, don't render anything.
-        return;
+        // For now, just render white
+        if (white == null && systemImages.get("white") != null) {
+          white = createLargeImage(systemImages.get("white").pimage);
+        }
+        
+        if (white != null) {
+          pgl.activeTexture(PGL.TEXTURE0);
+          pgl.bindTexture(PGL.TEXTURE_2D, white.glTexID);
+        }
       }
       
       pgl.texParameteri(PGL.TEXTURE_2D, PGL.TEXTURE_MAG_FILTER, PGL.NEAREST);
@@ -1232,15 +1339,36 @@ class Engine {
       currentPG.endPGL();
     }
     
+    public void largeImg(PGraphics currentPG, LargeImage img, float x, float y, float w, float h) {
+      
+      bind(currentPG, img);
+      
+      display.shader(currentPG, "largeimg");
+      currentPG.beginShape(QUADS);
+      currentPG.vertex(x, y, 0, 0);
+      currentPG.vertex(x+w, y, 1, 0);
+      currentPG.vertex(x+w, y+h, 1, 1);
+      currentPG.vertex(x, y+h, 0, 1);
+      currentPG.endShape();
+      
+      currentPG.flush();
+      
+      
+      // TODO: Figure out a way to not have to switch shaders so much.
+      currentPG.resetShader();
+    }
+    
     
     
     LargeImage createLargeImage(PImage img) {
+      
+      try {
         IntBuffer data = IntBuffer.allocate(img.width*img.height);
         
         // Copy pimage data to the intbuffer.
-        img.loadPixels();
         data.rewind();
         int l = img.width*img.height;
+        img.loadPixels();
         for (int i = 0; i < l; i++) {
           int c = img.pixels[i];
           int a = c >> 24 & 0xFF;
@@ -1274,6 +1402,19 @@ class Engine {
         largeimg.width = img.width;
         largeimg.height = img.height;
         return largeimg;
+      }
+      catch (RuntimeException e) {
+        return createLargeImage(systemImages.get("white").pimage);
+      }
+    }
+    
+    public void destroyImage(LargeImage im) {
+      // We have a potential memory leak here :(
+      if (clearListIndex+1 > CLEARLIST_SIZE-1) return;
+      
+      // Add it to the list so it will be cleared by the main thread.
+      clearList.put(clearListIndex++, im.glTexID);
+      clearList.rewind();
     }
     
     public void initShader(String name) {
@@ -1320,7 +1461,7 @@ class Engine {
           if (i+1 < l) {
             if (!(uniforms[i+1] instanceof Float)) {
               console.bugWarn("Invalid arguments ("+shaderName+"), uniform name needs to be followed by value.1");
-              println((uniforms[i+1]));
+              //println((uniforms[i+1]));
               return sh;
             }
           } else {
@@ -1369,63 +1510,56 @@ class Engine {
       return sh;
     }
     
-    public void img(PImage image, float x, float y, float w, float h) {
-      if (wireframe) {
-        recordRendererTime();
-        app.stroke(sin(selectBorderTime)*127+127, 100);
-        selectBorderTime += 0.1*getDelta();
-        app.strokeWeight(3);
-        app.noFill();
-        app.rect(x, y, w, h);
-        app.noStroke();
-      } else {
-        app.noStroke();
-      }
-      if (image == null) {
-        app.image(errorImg, x, y, w, h);
-        recordLogicTime();
-        console.warnOnce("Image listed as 'loaded' but image doesn't seem to exist.");
-        return;
-      }
-      if (image.width == -1 || image.height == -1) {
-        app.image(errorImg, x, y, w, h);
-        recordLogicTime();
-        console.warnOnce("Corrupted image.");
-        return;
-      }
-      // If image is loaded render.
-      if (image.width > 0 && image.height > 0) {app.image(image, x, y, w, h);
-        
-        return;
-      } else {
-        app.noStroke();
-        return;
-      }
+    public void setPGraphics(PGraphics p) {
+      currentPG = p;
     }
-  
-    public void imgOld(PImage image, float x, float y, float w, float h) {
-      if (wireframe) {
-        app.stroke(sin(app.frameCount*0.1)*127+127, 100);
-        app.strokeWeight(3);
-        app.noFill();
-        app.rect(x, y, w, h);
-        app.noStroke();
-      } else {
-        app.noStroke();
-      }
+    
+    public void img(DImage image, float x, float y, float w, float h) {
+      
+      
       if (image == null) {
         app.image(errorImg, x, y, w, h);
+        recordLogicTime();
         console.warnOnce("Image listed as 'loaded' but image doesn't seem to exist.");
         return;
       }
       if (image.width == -1 || image.height == -1) {
         app.image(errorImg, x, y, w, h);
+        recordLogicTime();
         console.warnOnce("Corrupted image.");
         return;
       }
       // If image is loaded render.
       if (image.width > 0 && image.height > 0) {
-        img(image, x, y, w, h);
+        if (image.mode == 1) {
+          app.image(image.pimage, x, y, w, h);
+        }
+        else if (image.mode == 2) {
+          largeImg(currentPG, image.largeImage, x, y, w, h);
+        }
+        
+        // Annnnd a wireframe
+        if (wireframe) {
+          recordRendererTime();
+          app.stroke(sin(selectBorderTime)*127+127, 100);
+          selectBorderTime += 0.1*getDelta();
+          app.strokeWeight(3);
+          app.noFill();
+          
+          app.beginShape(QUADS);
+          app.vertex(x, y);
+          app.vertex(x+w, y);
+          app.vertex(x+w, y+h);
+          app.vertex(x, y+h);
+          app.endShape();
+          
+          app.noStroke();
+        } else {
+          app.noStroke();
+        }
+        
+        
+        
         return;
       } else {
         app.noStroke();
@@ -1445,7 +1579,7 @@ class Engine {
     }
   
     public void img(String name, float x, float y) {
-      PImage image = systemImages.get(name);
+      DImage image = systemImages.get(name);
       if (image != null) {
         img(systemImages.get(name), x, y, image.width, image.height);
       } else {
@@ -1458,18 +1592,18 @@ class Engine {
   
   
     public void imgCentre(String name, float x, float y, float w, float h) {
-      PImage image = systemImages.get(name);
+      DImage image = systemImages.get(name);
       if (image == null) {
-        img(errorImg, x-errorImg.width/2, y-errorImg.height/2, w, h);
+        //img(errorImg, x-errorImg.width/2, y-errorImg.height/2, w, h);
       } else {
         img(image, x-w/2, y-h/2, w, h);
       }
     }
   
     public void imgCentre(String name, float x, float y) {
-      PImage image = systemImages.get(name);
+      DImage image = systemImages.get(name);
       if (image == null) {
-        img(errorImg, x-errorImg.width/2, y-errorImg.height/2, errorImg.width, errorImg.height);
+        //img(errorImg, x-errorImg.width/2, y-errorImg.height/2, errorImg.width, errorImg.height);
       } else {
         img(image, x-image.width/2, y-image.height/2, image.width, image.height);
       }
@@ -1491,6 +1625,36 @@ class Engine {
       return (timeframe/float(thisFrameMillis-lastFrameMillis))*BASE_FRAMERATE;
     }
     
+    public void displayMemUsageBar() {
+      pushMatrix();
+      scale(getScale());
+      display.recordRendererTime();
+      long used = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory());
+      //float percentage = (float)used/(float)MAX_MEM_USAGE;
+      long total = Runtime.getRuntime().totalMemory();
+      float percentage = (float)used/(float)total;
+      noStroke();
+      
+      float y = 0;
+      
+      fill(0, 0, 0, 127);
+      rect(100, y+20, (WIDTH-200.), 50);
+      
+      if (percentage > 0.8) 
+        fill(255, 140, 20); // Low mem
+      else 
+        fill(50, 50, 255);  // Normal
+        
+        
+      rect(100, y+20, (WIDTH-200.)*percentage, 50);
+      fill(255);
+      textFont(DEFAULT_FONT, 30);
+      textAlign(LEFT, CENTER);
+      text("Mem: "+(used/1024)+" kb / "+(total/1024)+" kb", 105, y+45);
+      display.recordLogicTime();
+      popMatrix();
+    }
+    
     public void displayScreens() {
       if (transitionScreens) {
         power.setAwake();
@@ -1498,30 +1662,30 @@ class Engine {
   
         // Sorry for the code duplication!
         switch (transitionDirection) {
-        case RIGHT:
-          app.pushMatrix();
-          prevScreen.screenx = ((WIDTH*transition)-WIDTH)*displayScale;
-          prevScreen.display();
-          app.popMatrix();
-  
-  
-          app.pushMatrix();
-          currScreen.screenx = ((WIDTH*transition)*displayScale);
-          currScreen.display();
-          app.popMatrix();
-          break;
-        case LEFT:
-          app.pushMatrix();
-          prevScreen.screenx = ((WIDTH-(WIDTH*transition))*displayScale);
-          prevScreen.display();
-          app.popMatrix();
-  
-  
-          app.pushMatrix();
-          currScreen.screenx = ((-WIDTH*transition)*displayScale);
-          currScreen.display();
-          app.popMatrix();
-          break;
+          case RIGHT:
+            app.pushMatrix();
+            prevScreen.screenx = ((WIDTH*transition)-WIDTH)*displayScale;
+            prevScreen.display();
+            app.popMatrix();
+    
+    
+            app.pushMatrix();
+            currScreen.screenx = ((WIDTH*transition)*displayScale);
+            currScreen.display();
+            app.popMatrix();
+            break;
+          case LEFT:
+            app.pushMatrix();
+            prevScreen.screenx = ((WIDTH-(WIDTH*transition))*displayScale);
+            prevScreen.display();
+            app.popMatrix();
+    
+    
+            app.pushMatrix();
+            currScreen.screenx = ((-WIDTH*transition)*displayScale);
+            currScreen.display();
+            app.popMatrix();
+            break;
         }
   
         if (transition < 0.001) {
@@ -1550,11 +1714,20 @@ class Engine {
       app.clip(x*s, y*s, wi*s, hi*s);
     }
     
-    public void updateDelta() {
-      // Since updatedelta is the only displaymodule function called in the
-      // main engine function, we might as well reset uploadGPUOnce here even tho it
-      // has nothing to do with delta.
+    public void update() {
+      // Reset so that a new texture can be uploaded to gpu
       uploadGPUOnce = true;
+      
+      if (clearListIndex > 0) {
+        pgl = app.beginPGL();
+        clearList.rewind();
+        pgl.deleteTextures(clearListIndex, clearList);
+        clearList.rewind();
+        app.endPGL();
+        clearListIndex = 0;
+      }
+      
+      
       
       
       totalTimeMillis = thisFrameMillis-lastFrameMillis;
@@ -1581,6 +1754,12 @@ class Engine {
     
     public float getTimeSeconds() {
       return time/display.BASE_FRAMERATE;
+    }
+    
+    // Same as getTimeSeconds() but resets after every 1 second.
+    public float getTimeSecondsLoop() {
+      float t = getTimeSeconds();
+      return t-floor(t);
     }
     
   
@@ -1939,7 +2118,15 @@ class Engine {
     
     
     public void colorPicker(float x, float y, Runnable runWhenPicked) {
-      currMinimenu = new ColorPicker(x, y, 300, 200, runWhenPicked);
+      float wi = 300., hi = 200.;
+      if (display.phoneMode) {
+        wi = 450.;
+        hi = 300.;
+      }
+      if (x+wi > display.WIDTH) {
+        x = display.WIDTH-wi;
+      }
+      currMinimenu = new ColorPicker(x, y, wi, hi, runWhenPicked);
     }
     
     public color getPickedColor() {
@@ -1985,6 +2172,32 @@ class Engine {
       this.spriteSystemClickable = true;
       this.guiFade = 255.;
     }
+    
+    public boolean buttonHoverVary(String name) {
+      if (display.phoneMode) {
+        name += "-phone";
+      }
+      return buttonHover(name);
+    }
+    
+    public boolean buttonHover(String name) {
+      if (this.currentSpritePlaceholderSystem == null) {
+        console.bugWarn("You forgot to call useSpriteSystem()!");
+        return false;
+      }
+      
+      return (currentSpritePlaceholderSystem.buttonHover(name) && !currentSpritePlaceholderSystem.interactable && spriteSystemClickable);
+    }
+    
+    // This vary version has multiple types of buttons (normal and phone) for different size configurations.
+    public boolean buttonVary(String name, String texture, String displayText) {
+      if (display.phoneMode) {
+        return button(name+"-phone", texture, displayText);
+      }
+      else {
+        return button(name, texture, displayText);
+      }
+    }
   
     public boolean button(String name, String texture, String displayText) {
   
@@ -1995,7 +2208,7 @@ class Engine {
   
       // This doesn't change at all.
       // I just wanna keep it in case it comes in useful later on.
-      boolean guiClickable = true;
+      //boolean guiClickable = true;
   
       // Don't want our messy code to spam the console lol.
       currentSpritePlaceholderSystem.suppressSpriteWarning = true;
@@ -2010,7 +2223,7 @@ class Engine {
       // - Must not be in a minimenu
       // - Must not be in gui move sprite / edit mode.
       // - also the guiClickable thing.
-      if (currentSpritePlaceholderSystem.buttonHover(name) && guiClickable && !currentSpritePlaceholderSystem.interactable && spriteSystemClickable) {
+      if (buttonHover(name)) {
         // Slight gray to indicate hover
         app.tint(230, guiFade);
         app.fill(230, guiFade);
@@ -2027,6 +2240,23 @@ class Engine {
   
       // Only when the button is actually clicked.
       return hover && input.primaryClick;
+    }
+    
+    public boolean basicButton(String display, float x, float y, float wi, float hi) {
+      color c = color(200);
+      
+      boolean hovering = (input.mouseX() > x && input.mouseY() > y && input.mouseX() < x+wi && input.mouseY() < y+hi);
+      if (hovering) c = color(255);
+      
+      noFill();
+      stroke(c);
+      rect(x+10, y, wi, hi);
+      
+      textSize(32);
+      textAlign(CENTER, CENTER);
+      fill(c);
+      text(display, x+wi/2, y+hi/2);
+      return hovering && input.primaryClick;
     }
     
     public void loadingIcon(float x, float y, float widthheight) {
@@ -2083,10 +2313,9 @@ class Engine {
 
 
 
-
   public class AudioModule {
-    private Music streamMusic;
-    private Music streamMusicFadeTo;
+    private Music streamerMusic;
+    private Music streamerMusicFadeTo;
     
     private float musicFadeOut = 1.;
     public final float MUSIC_FADE_SPEED = 0.95;
@@ -2105,9 +2334,11 @@ class Engine {
     public final String MUSIC_CACHE_FILE = "music_cache.json";
     public final int MAX_MUSIC_CACHE_SIZE_KB = 1024*256;  // 256 MB
     public final String[] FORCE_CACHE_MUSIC = {
-      "data/engine/music/pixelrealm_default_bgm.wav",
-      "data/engine/music/pixelrealm_default_bgm_legacy.wav"
+      "engine/music/pixelrealm_default_bgm.wav",
+      "engine/music/pixelrealm_default_bgm_legacy.wav"
     };
+    // For when porting to other platforms which don't support gstreamer (*ahem* android *ahem*) 
+    public boolean DISABLE_GSTREAMER = false;
     
     
     // So that we can use both SoundFile and Movie types without complicated code
@@ -2115,10 +2346,12 @@ class Engine {
       final int NONE = 0;
       final int CACHED = 1;
       final int STREAM = 2;
+      final int ANDROID = 3;
       int mode = 0;
       boolean cacheMiss = false;
       private Movie streamMusic;
       private SoundFile cachedMusic;
+      private AndroidMedia androidMusic;
       String originalPath = "";
       float volume = 0.;
       
@@ -2152,7 +2385,7 @@ class Engine {
               boolean playDefaultLoadingMusic = true;
               
               final int COMPRESSED_MAX_SIZE = 1048576; // 1mb
-              final int UNCOMPRESSED_MAX_SIZE = 15728640; // 10mb
+              final int UNCOMPRESSED_MAX_SIZE = 15728640; // 15mb
               
               // Compressed file formats can take long to decompress,
               // so we'll only allow a minute or two at most.
@@ -2193,8 +2426,16 @@ class Engine {
         // Otherwise use gstreamer
         else {
           //console.log("Stream music mode");
-          mode = STREAM;
-          streamMusic = new Movie(app, path);
+          
+          if (isAndroid()) {
+            mode = ANDROID;
+            androidMusic = new AndroidMedia(path);
+          }
+          else {
+            mode = STREAM;
+            if (!DISABLE_GSTREAMER)
+              streamMusic = new Movie(app, path);
+          }
         }
       }
       
@@ -2202,50 +2443,62 @@ class Engine {
         if (mode == CACHED) {
           if (!cachedMusic.isPlaying()) cachedMusic.play(); 
         } 
-        else if (mode == STREAM) streamMusic.play();
+        else if (mode == STREAM && !DISABLE_GSTREAMER) streamMusic.play();
+        else if (mode == ANDROID) androidMusic.loop();     // Here we loop cus this ain't the half-working Movie library, we can freely do that
       }
       
       public void stop() {
-        if (mode == CACHED) cachedMusic.stop(); else if (mode == STREAM) streamMusic.stop();
+        if (mode == CACHED) cachedMusic.stop(); 
+        else if (mode == STREAM && !DISABLE_GSTREAMER) streamMusic.stop();
+        else if (mode == ANDROID) androidMusic.stop();
       }
       
       public boolean available() {
-        if (mode == CACHED)
-          return true;
-        else if (mode == STREAM) return streamMusic.available();
+        if (mode == STREAM && !DISABLE_GSTREAMER) return streamMusic.available();
+        // No need in android
         return true;
       }
       
       public void read() {
-        if (mode == STREAM) streamMusic.read();
+        if (mode == STREAM && !DISABLE_GSTREAMER) streamMusic.read();
+        // No need in android
       }
       
       public void volume(float vol) {
         volume = vol;
-        if (mode == STREAM) streamMusic.volume(vol);
+        if (mode == STREAM && !DISABLE_GSTREAMER) streamMusic.volume(vol);
+        else if (mode == ANDROID) androidMusic.volume(vol);
       }
       
       public float duration() {
-        if (mode == CACHED) return cachedMusic.duration(); else if (mode == STREAM) return streamMusic.duration();
+        if (mode == CACHED) return cachedMusic.duration(); 
+        else if (mode == STREAM && !DISABLE_GSTREAMER) return streamMusic.duration();
+        // Since android loops we don't need to worry about this (for now).
         return 0.;
       }
       
       public float time() {
-        if (mode == CACHED) return cachedMusic.position(); else if (mode == STREAM) return streamMusic.time();
+        if (mode == CACHED) return cachedMusic.position(); 
+        else if (mode == STREAM && !DISABLE_GSTREAMER) return streamMusic.time();
+        // Since android loops we don't need to worry about this (for now).
         return 0.;
       }
       
       public void jump(float pos) {
-        if (mode == CACHED) cachedMusic.jump(pos); else if (mode == STREAM) streamMusic.jump(pos);
+        if (mode == CACHED) cachedMusic.jump(pos); 
+        else if (mode == STREAM && !DISABLE_GSTREAMER) streamMusic.jump(pos);
+        // Since android loops we don't need to worry about this (for now).
       }
       
       public boolean isPlaying() {
-        if (mode == CACHED) return cachedMusic.isPlaying(); else if (mode == STREAM) return streamMusic.isPlaying();
+        if (mode == CACHED) return cachedMusic.isPlaying(); 
+        else if (mode == STREAM && !DISABLE_GSTREAMER) return streamMusic.isPlaying();
+        else if (mode == ANDROID) return androidMusic.isPlaying();
         return true;
       }
       
       public void setReady() {
-        if (mode == STREAM) streamMusic.playbin.setState(org.freedesktop.gstreamer.State.READY); 
+        //if (mode == STREAM) streamMusic.playbin.setState(org.freedesktop.gstreamer.State.READY); 
       }
       
       public void playbinSetVolume(float vol) {
@@ -2253,32 +2506,38 @@ class Engine {
         if (mode == CACHED) {
           cachedMusic.amp(vol);
         }
-        else if (mode == STREAM) {
+        else if (mode == STREAM && !DISABLE_GSTREAMER) {
           streamMusic.playbin.setVolume(vol*masterVolume);
           streamMusic.playbin.getState();
+        }
+        else if (mode == ANDROID) {
+          androidMusic.volume(vol);
         }
       }
       
       // When gstreamer finally loads, switches seamlessly to gstreamer version.
+      // Note that this should not be called in android mode.
       public void switchMode() {
         if (!loadingMusic() && mode != STREAM) {
           
-          streamMusic = new Movie(app, originalPath);
+          if (!DISABLE_GSTREAMER) {
+            streamMusic = new Movie(app, originalPath);
           
-          // Transfer cachedMusic properties over to streammusic
-          if (streamMusic != null) {
-            streamMusic.volume(this.volume);
-            
-            // If cachedmusic exists then cachedmusic.isplaying = streammusic.isplaying
-            // Otherwise mode must be NONE so we just kickstart the streamMusic.
-            if (cachedMusic != null) {
-              if (cachedMusic.isPlaying())
-                streamMusic.play();
-              streamMusic.jump(cachedMusic.position());
+            // Transfer cachedMusic properties over to streammusic
+            if (streamMusic != null) {
+              streamMusic.volume(this.volume);
+              
+              // If cachedmusic exists then cachedmusic.isplaying = streammusic.isplaying
+              // Otherwise mode must be NONE so we just kickstart the streamMusic.
+              if (cachedMusic != null) {
+                if (cachedMusic.isPlaying())
+                  streamMusic.play();
+                streamMusic.jump(cachedMusic.position());
+              }
+              else streamMusic.play();
+              
+              if (mode == CACHED) cachedMusic.stop();
             }
-            else streamMusic.play();
-            
-            if (mode == CACHED) cachedMusic.stop();
           }
           
           mode = STREAM;
@@ -2287,6 +2546,11 @@ class Engine {
     }
     
     public AudioModule() {
+      // For now.
+      if (isAndroid()) {
+        DISABLE_GSTREAMER = true;
+      }
+      
       sounds = new HashMap<String, SoundFile>();
       cachedMusicMap = new HashMap<String, SoundFile>();
       VOLUME_NORMAL = settings.getFloat("volumeNormal");
@@ -2323,34 +2587,35 @@ class Engine {
       public int priority = 0;
     }
     
+    //@SuppressWarnings("unused")
     public void saveAsWav(SoundFile s, int sampleRate, String path) {
-      AudioSample a = (AudioSample)s;
-      
-      // Only allow a maximum of a minute of audio data to be loaded
-      int size = min(a.frames()*a.channels(), 60*a.channels()*sampleRate);
-      float[] data = new float[size];
-      a.read(data);
-      
-      int bitDepth = 16;
-      int numChannels = a.channels();
-
-      AudioFormat audioFormat = new AudioFormat(sampleRate, bitDepth, numChannels, true, false);
-      byte[] audioData = floatArrayToByteArray(data, bitDepth);
-      
-      try {
-          ByteArrayInputStream byteArrayInputStream = new ByteArrayInputStream(audioData);
-          AudioInputStream audioInputStream = new AudioInputStream(byteArrayInputStream, audioFormat, data.length / numChannels);
-          AudioSystem.write(audioInputStream, AudioFileFormat.Type.WAVE, new File(path));
-      } catch (IOException e) {
-          e.printStackTrace();
+      // Android uses a completely different audio system and caching isn't needed 
+      // (cus we don't need to wait for gstreamer to start up), so we disable caching
+      // music, it's not needed.
+      if (!isAndroid()) {
+        AudioSample a = (AudioSample)s;
+        
+        // Only allow a maximum of a minute of audio data to be loaded
+        int size = min(a.frames()*a.channels(), 60*a.channels()*sampleRate);
+        float[] data = new float[size];
+        a.read(data);
+        int bitDepth = 16;
+        int numChannels = a.channels();
+  
+        byte[] audioData = floatArrayToByteArray(data, bitDepth);
+        
+        saveByteArrayAsWAV(audioData, sampleRate, bitDepth, numChannels, path);
+        
+        updateMusicCache(path);
+        
+        stats.increase("music_cache_files", 1);
       }
       
-      updateMusicCache(path);
-      
-      // TODO: User may close application midway while creating wav which might end up
-      // in Timeway not loading.
+      //// TODO: User may close application midway while creating wav which might end up
+      //// in Timeway not loading.
     }
 
+    //@SuppressWarnings("unused")
     private byte[] floatArrayToByteArray(float[] floatArray, int bitDepth) {
         ByteBuffer byteBuffer = ByteBuffer.allocate(floatArray.length * (bitDepth / 8));
         ByteOrder order = ByteOrder.LITTLE_ENDIAN;
@@ -2387,10 +2652,10 @@ class Engine {
         return;
       }
       
-      if (CACHE_MUSIC && cacheTime < MAX_CACHE_TIME) {
+      if ((CACHE_MUSIC && !isAndroid()) && cacheTime < MAX_CACHE_TIME) {
         
         boolean cacheLoaded = true;
-        String cacheFilePath = APPPATH+CACHE_PATH+MUSIC_CACHE_FILE;
+        String cacheFilePath = CACHE_PATH+MUSIC_CACHE_FILE;
         JSONArray jsonarray = null;
         File f = new File(cacheFilePath);
         if (f.exists()) {
@@ -2482,43 +2747,45 @@ class Engine {
           final String cachedFileNameFinal = temp;
           cachedFileName = cachedFileNameFinal;
           
-          // Kickstart the thread that will cache the file.
-          Thread t1 = new Thread(new Runnable() {
-            public void run() {
-              // As soon as we're not caching anymore, take the opportunity and set to true.
-              // Otherwise, wait wait wait
-              while (!caching.compareAndSet(false, true)) {
-                try {
-                  Thread.sleep(10);
+          if (!DISABLE_GSTREAMER) {
+            // Kickstart the thread that will cache the file.
+            Thread t1 = new Thread(new Runnable() {
+              public void run() {
+                // As soon as we're not caching anymore, take the opportunity and set to true.
+                // Otherwise, wait wait wait
+                while (!caching.compareAndSet(false, true)) {
+                  try {
+                    Thread.sleep(10);
+                  }
+                  catch (InterruptedException e) {
+                    // we don't care.
+                  }
                 }
-                catch (InterruptedException e) {
-                  // we don't care.
-                }
-              }
-              
-              try {
-                println("Caching "+path+"...");
-                SoundFile s = new SoundFile(app, path);
-                int samplerate = s.sampleRate();
-                // Bug fix: mp3 sampleRate() doesn't seem to be very accurate
-                // for mp3 files
-                // TODO: Read mp3/ogg header data and determine samplerate there.
-                if (ext.equals("mp3")) {
-                  samplerate = 48000;
-                }
-                saveAsWav(s, samplerate, cachedFileNameFinal);
-                println("DONE SOUND CACHE "+path);
                 
+                try {
+                  println("Caching "+path+"...");
+                  SoundFile s = new SoundFile(app, path);
+                  int samplerate = s.sampleRate();
+                  // Bug fix: mp3 sampleRate() doesn't seem to be very accurate
+                  // for mp3 files
+                  // TODO: Read mp3/ogg header data and determine samplerate there.
+                  if (ext.equals("mp3")) {
+                    samplerate = 48000;
+                  }
+                  saveAsWav(s, samplerate, cachedFileNameFinal);
+                  println("DONE SOUND CACHE "+cachedFileNameFinal);
+                  
+                }
+                catch (RuntimeException e) {
+                  console.warn("Sound caching error: "+e.getMessage());
+                }
+                // Release so that another thread can begin its caching process.
+                caching.set(false);
               }
-              catch (RuntimeException e) {
-                console.warn("Sound caching error.");
-              }
-              // Release so that another thread can begin its caching process.
-              caching.set(false);
             }
+            );
+            t1.start();
           }
-          );
-          t1.start();
         }
         
         // Nothing more to do.
@@ -2560,8 +2827,8 @@ class Engine {
     // IMPORTANT NOTE: this does NOT run the loader code in a seperate thread. Make sure
     // to run this in a seperate thread otherwise you're going to experience stalling BIIIIIG time.
     public void loadMusicCache() {
-      if (CACHE_MUSIC) {
-        String cacheFilePath = APPPATH+CACHE_PATH+MUSIC_CACHE_FILE;
+      if (CACHE_MUSIC && !isAndroid()) {
+        String cacheFilePath = CACHE_PATH+MUSIC_CACHE_FILE;
         File f = new File(cacheFilePath);
         if (f.exists()) {
           JSONArray jsonarray;
@@ -2692,6 +2959,8 @@ class Engine {
     
     // Ugly code but secure
     public boolean loadingMusic() {
+      // In android, we use a completely different system that doesn't need loading.
+      if (isAndroid()) return false;
       boolean ready = musicReady.get();
       //if (gstreamerLoading && ready) gstreamerLoading = false;
       return !ready;
@@ -2740,6 +3009,13 @@ class Engine {
       }
     }
     
+    public void stopSound(String name) {
+      SoundFile s = getSound(name);
+      if (s != null) {
+          s.stop();
+      }
+    }
+    
   
     public void setSoundVolume(String name, float vol) {
       SoundFile s = getSound(name);
@@ -2749,7 +3025,7 @@ class Engine {
     private float masterVolume = 1.;
     public void setMasterVolume(float vol) {
       masterVolume = vol;
-      Sound.volume(vol);
+      //Sound.volume(vol);
     }
   
   
@@ -2769,16 +3045,18 @@ class Engine {
       
       
       
-  
-      if (startupGStreamer) {
+      // We don't need to boot up gstreamer in android cus gstreamer doesn't exist in android.
+      if (startupGStreamer && !isAndroid()) {
         //console.log("startup gstreamer");
         // Start music and don't play anything (just want it to get past the inital delay of starting gstreamer.
         musicReady.set(false);
         Thread t1 = new Thread(new Runnable() {
           public void run() {
-            Movie loadGstreamer = new Movie(app, path);
-            loadGstreamer.play();
-            loadGstreamer.stop();
+            if (!DISABLE_GSTREAMER) {
+              Movie loadGstreamer = new Movie(app, path);
+              loadGstreamer.play();
+              loadGstreamer.stop();
+            }
     
             musicReady.set(true);
           }
@@ -2793,10 +3071,10 @@ class Engine {
         //if ((loadingMusic() && !CACHE_MUSIC) == false) {
           Thread t1 = new Thread(new Runnable() {
           public void run() {
-            streamMusic = loadNewMusic(path);
+            streamerMusic = loadNewMusic(path);
     
-            if (streamMusic != null)
-              streamMusic.play();
+            if (streamerMusic != null)
+              streamerMusic.play();
             }
           }
           );
@@ -2834,13 +3112,13 @@ class Engine {
     }
   
     public void stopMusic() {
-      if (streamMusic != null) {
-        streamMusic.stop();
-        streamMusic = null;
+      if (streamerMusic != null) {
+        streamerMusic.stop();
+        streamerMusic = null;
       }
-      if (streamMusicFadeTo != null) {
-        streamMusicFadeTo.stop();
-        streamMusicFadeTo = null;
+      if (streamerMusicFadeTo != null) {
+        streamerMusicFadeTo.stop();
+        streamerMusicFadeTo = null;
       }
     }
   
@@ -2853,22 +3131,22 @@ class Engine {
   
       // Temporary fix
       if (musicFadeOut < 1.) {
-        if (streamMusicFadeTo != null) {
-          streamMusicFadeTo.stop();
+        if (streamerMusicFadeTo != null) {
+          streamerMusicFadeTo.stop();
         }
       }
   
       // If no music is currently playing, don't bother fading out the music, just
       // start the music as normal.
-      if (streamMusic == null || isLoading()) {
+      if (streamerMusic == null || isLoading()) {
         streamMusic(path);
         return;
       }
       
-      streamMusicFadeTo = loadNewMusic(path);
-      if (streamMusicFadeTo != null) {
-        streamMusicFadeTo.volume(0.);
-        streamMusicFadeTo.setReady();
+      streamerMusicFadeTo = loadNewMusic(path);
+      if (streamerMusicFadeTo != null) {
+        streamerMusicFadeTo.volume(0.);
+        streamerMusicFadeTo.setReady();
       }
       musicFadeOut = 0.99;
     }
@@ -2876,9 +3154,9 @@ class Engine {
     // TODO: Doesn't work totally.
     public void fadeAndStopMusic() {
       if (musicFadeOut < 1.) {
-        if (streamMusicFadeTo != null) {
-          streamMusicFadeTo.stop();
-          streamMusicFadeTo = null;
+        if (streamerMusicFadeTo != null) {
+          streamerMusicFadeTo.stop();
+          streamerMusicFadeTo = null;
         }
         return;
       }
@@ -2889,9 +3167,9 @@ class Engine {
     public void processSound() {
       // Once gstreamer has loaded up, begin playing the music we actually want to play.
       if (reloadMusic && !loadingMusic()) {
-        if (CACHE_MUSIC) {
-          if (streamMusic != null) streamMusic.switchMode();
-          if (streamMusicFadeTo != null) streamMusicFadeTo.switchMode();
+        if (CACHE_MUSIC && !isAndroid()) {
+          if (streamerMusic != null) streamerMusic.switchMode();
+          if (streamerMusicFadeTo != null) streamerMusicFadeTo.switchMode();
           // We no longer need the cached music map. Just to be safe, don't null it
           // in case of nullpointerexception, but create a new one to clear the cache
           // stored in it
@@ -2913,47 +3191,52 @@ class Engine {
         if (musicFadeOut > 0.005 && !useNewLibraryVersion) {
           // Fade the old music out
           float vol = musicFadeOut *= PApplet.pow(MUSIC_FADE_SPEED, display.getDelta());
-          if (streamMusic != null)
-            streamMusic.playbinSetVolume(vol);
+          if (streamerMusic != null)
+            streamerMusic.playbinSetVolume(vol);
 
 
           // Fade the new music in.
-          if (streamMusicFadeTo != null) {
-            streamMusicFadeTo.play();
-            streamMusicFadeTo.volume((1.-vol)*masterVolume);
+          if (streamerMusicFadeTo != null) {
+            streamerMusicFadeTo.play();
+            streamerMusicFadeTo.volume((1.-vol)*masterVolume);
           } 
           
           
           //else 
           //  console.bugWarnOnce("streamMusicFadeTo shouldn't be null here.");
         } else {
-          if (streamMusic != null)
-            streamMusic.stop();
-          if (streamMusicFadeTo != null) streamMusic = streamMusicFadeTo;
-          if (useNewLibraryVersion) streamMusic.play();
+          if (streamerMusic != null)
+            streamerMusic.stop();
+          if (streamerMusicFadeTo != null) streamerMusic = streamerMusicFadeTo;
+          if (useNewLibraryVersion) streamerMusic.play();
           musicFadeOut = 1.;
         }
       }
 
 
 
-      if (streamMusic != null) {
+      if (streamerMusic != null) {
         // Don't wanna change the volume on cached music
         if (!loadingMusic())
-          streamMusic.volume(masterVolume);
+          streamerMusic.volume(masterVolume);
           
-        if (streamMusic.available() == true) {
-          streamMusic.read();
+        if (streamerMusic.available() == true) {
+          streamerMusic.read();
         }
         float error = 0.1;
 
         // PERFORMANCE ISSUE: streamMusic.time()
         
         // If the music has finished playing, jump to beginning to play again.
-        if (streamMusic.time() >= streamMusic.duration()-error) {
-          streamMusic.jump(0.);
-          if (!streamMusic.isPlaying()) {
-            streamMusic.play();
+        if (isAndroid()) {
+          
+        }
+        else {
+          if (streamerMusic.time() >= streamerMusic.duration()-error) {
+            streamerMusic.jump(0.);
+            if (!streamerMusic.isPlaying()) {
+              streamerMusic.play();
+            }
           }
         }
       }
@@ -2997,24 +3280,149 @@ class Engine {
   
   
   
-  public class FilemanagerModule {
-    Engine engine;
+  
+  
+  public class StatsModule {
+    JSONObject json;
+    HashMap<String, Float> befores = new HashMap<String, Float>();
     
-    public FilemanagerModule(Engine e) {
-      engine = e;
+    public StatsModule() {
+      if (isAndroid()) {
+        String path = file.directorify(getAndroidWriteableDir())+STATS_FILE;
+        if (file.exists(path))
+          json = loadJSONObject(path);
+        else json = new JSONObject();
+      }
+      else {
+        String path = APPPATH+STATS_FILE;
+        if (file.exists(path))
+          json = loadJSONObject(path);
+        else json = new JSONObject();
+      }
+    }
+    
+    public void set(String name, int value) {
+      json.setInt(name, value);
+    }
+    
+    public void set(String name, float value) {
+      json.setFloat(name, value);
+    }
+    
+    public void setIfHigher(String name, int value) {
+      if (value > stats.getInt(name)) {
+        set(name, value);
+      }
+    }
+    
+    public void setIfIHigher(String name, float value) {
+      if (value > stats.getFloat(name)) {
+        set(name, value);
+      }
+    }
+    
+    public int getInt(String name) {
+      return json.getInt(name, 0);
+    }
+    
+    public float getFloat(String name) {
+      return json.getFloat(name, 0.0);
+    }
+    
+    public void increase(String name, int value) {
+      json.setInt(name, json.getInt(name, 0)+value);
+    }
+    
+    public void increase(String name, float value) {
+      json.setFloat(name, json.getFloat(name, 0.0)+value);
+    }
+    
+    public void recordTime(String name) {
+      float before = 0;
+      if (befores.containsKey(name)) {
+        before = befores.get(name);
+      }
+      float timesince = (float(millis())-before)/1000.;
+      // To only make the timer run when the method is called.
+      if (timesince > 0.5) timesince = 0.;
+      
+      increase(name, timesince);
+      befores.put(name, float(millis()));
+    }
+    
+    public void save(boolean onlyIfExists) {
+      String path = "";
+      if (isAndroid()) {
+        path = file.directorify(getAndroidWriteableDir())+STATS_FILE;
+      }
+      else {
+        path = APPPATH+STATS_FILE;
+      }
+      if (onlyIfExists && !file.exists(path)) return;
+      saveJSONObject(json, path);
+    }
+    
+    public void save() {
+      save(true);
+    }
+  }
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  public class FilemanagerModule {
+    public FilemanagerModule() {
       
       DEFAULT_DIR  = settings.getString("homeDirectory");
       {
         File f = new File(DEFAULT_DIR);
         if (!f.exists()) {
           console.warn("homeDirectory "+DEFAULT_DIR+" doesn't exist! You should check your config file.");
-          DEFAULT_DIR = System.getProperty("user.home").replace('\\', '/');
+          
+          if (isAndroid()) {
+            DEFAULT_DIR = "/storage/emulated/0/";
+          }
+          else {
+            DEFAULT_DIR = System.getProperty("user.home").replace('\\', '/');
+          }
         }
         currentDir  = DEFAULT_DIR;
       }
       
       if (DEFAULT_DIR.length() > 0)
         if (DEFAULT_DIR.charAt(DEFAULT_DIR.length()-1) == '/')  DEFAULT_DIR = DEFAULT_DIR.substring(0, DEFAULT_DIR.length()-1);
+        
+      // Cus we can't get any information on anything about our files, we'll need to load a list which contains everything
+      // so that exists() works.
+      if (isAndroid()) {
+        String[] strings = loadStrings(EVERYTHING_TXT_PATH);
+        for (String path : strings) {
+          everything.add(path.trim());
+        }
+      }
     }
     
     
@@ -3026,13 +3434,13 @@ class Engine {
     public boolean fileSelectSuccess = false;
     public boolean selectingFile = false;
     public Object objectToSave;
-    public 
+    private HashSet<String> everything = new HashSet<String>();
     
     
     void selectOutput(String promptMessage) {
       if (true) {
         fileSelectSuccess = false;
-        app.selectOutput(promptMessage, "outputFileSelected");
+        selectOutputSketch(promptMessage, "outputFileSelected");
         selectingFile = true;
       }
       // TODO: Pixelrealm file chooser.
@@ -3072,6 +3480,12 @@ class Engine {
     }
     
     public boolean mv(String oldPlace, String newPlace) {
+      // We know we're merely accessing a fake filesystem now in android.
+      if (isAndroid() && (oldPlace.charAt(0) != '/' || newPlace.charAt(0) != '/')) {
+        console.bugWarn("You can't move files to/from the assets folder! It's read-only!");
+        return false;
+      }
+      
       try {
         File of = new File(oldPlace);
         File nf = new File(newPlace);
@@ -3093,28 +3507,68 @@ class Engine {
       return true;
     }
     
-    public boolean copy(String src, String destination) {
-      if (!exists(src)) {
-        console.bugWarn("copy: "+src+" doesn't exist!");
-        return false;
-      }
+    public boolean copy(String src, String dest) {
+      //if (!exists(src)) {
+      //  console.bugWarn("copy: "+src+" doesn't exist!");
+      //  return false;
+      //}
       
+      // In android mode, we need to tell when we're copying from the source folder.
       
-      try {
-        Path copied = Paths.get(destination);
-        Path originalPath = (new File(src)).toPath();
-        Files.copy(originalPath, copied, StandardCopyOption.REPLACE_EXISTING);
+      if (isAndroid()) {
+        // Can't write to assets, dest should never be in assets.
+        if (dest.charAt(0) != '/') {
+          console.bugWarn("copy: you can't copy to destination! Assets is read-only!");
+        }
+        
+        // Case: copying from assets directory. We use android mode's buildin function to make
+        // a inputstreamer.
+        InputStream fis = null;
+        OutputStream fos = null;
+        try {
+            if (src.charAt(0) != '/') {
+                fis = createInput(src);
+                fos = new FileOutputStream(dest);
+            }
+            else {
+                fis = new FileInputStream(src);
+                fos = new FileOutputStream(dest);
+            }
+        
+
+            byte[] buffer = new byte[1024];
+            int length;
+            while ((length = fis.read(buffer)) > 0) {
+                fos.write(buffer, 0, length);
+            }
+            System.out.println("File copied successfully.");
+            
+            fis.close();
+            fos.close();
+
+        } catch (IOException e) {
+            console.warn("Couldn't copy files: "+e.getMessage());
+            return false;
+        }
+        
       }
-      catch (IOException e) {
-        console.warn(e.getMessage());
-        return false;
+      else {
+        try {
+          Path copied = Paths.get(dest);
+          Path originalPath = (new File(src)).toPath();
+          Files.copy(originalPath, copied, StandardCopyOption.REPLACE_EXISTING);
+        }
+        catch (IOException e) {
+          console.warn(e.getMessage());
+          return false;
+        }
       }
       return true;
     }
   
     public void backupMove(String path) {
       String name = getFilename(path);
-      String newPath = APPPATH+CACHE_PATH+"_"+name+"_"+getLastModified(path).replaceAll("[\\.:]", "-")+".txt";
+      String newPath = CACHE_PATH+"_"+name+"_"+getLastModified(path).replaceAll("[\\.:]", "-")+".txt";
       if (!mv(path, newPath)) {
         console.log(newPath);
         // If a file doesn't back up, it's not the end of the world.
@@ -3128,6 +3582,31 @@ class Engine {
         backupMove(path);
           
       app.saveJSONObject(json, path);
+    }
+    
+    
+    public String getLastModified(String path) {
+      // For now, nothing we can do
+      if (isAndroid()) {
+        return "000000";
+      }
+      
+      Path file = Paths.get(path);
+  
+      if (!file.toFile().exists()) {
+        return null;
+      }
+  
+      BasicFileAttributes attr;
+      try {
+        attr = Files.readAttributes(file, BasicFileAttributes.class);
+      }
+      catch (IOException e) {
+        console.warn("Couldn't get date modified time: "+e.getMessage());
+        return "";
+      }
+  
+      return attr.lastModifiedTime().toString();
     }
     
     
@@ -3169,6 +3648,18 @@ class Engine {
     }
   
     public String getDir(String path) {
+      try {
+        String str = path.substring(0, path.lastIndexOf('/', path.length()-2));
+        return str;
+      }
+      catch (StringIndexOutOfBoundsException e) {
+        return "";
+      }
+    }
+    
+    // Because I can't be bothered to solve bugs.
+    // If there's no dir, returns the full path instead of nothing.
+    public String getDirLegacy(String path) {
       try {
         String str = path.substring(0, path.lastIndexOf('/', path.length()-2));
         return str;
@@ -3217,8 +3708,8 @@ class Engine {
     
     // Yes.
     public boolean exists(String path) {
-      File f = new File(path);
-      return f.exists();
+      boolean exists = (new File(path)).exists();
+      return isAndroid() ? exists || everything.contains(path) : exists;
     }
     
     public boolean isImage(String path) {
@@ -3272,6 +3763,9 @@ class Engine {
       
       // Now strip off the ext.
       index = filenameWithExt.indexOf('.');
+      if (index == -1) {
+        return filenameWithExt;
+      }
       String result = filenameWithExt.substring(0, index);
       //console.log(result);
       return result;
@@ -3279,7 +3773,7 @@ class Engine {
   
     public boolean atRootDir(String dirName) {
       // This will heavily depend on what os we're on.
-      if (platform == WINDOWS) {
+      if (isWindows()) {
   
         // for windows, let's do a dirty way of checking for 3 characters
         // such as C:/
@@ -3357,12 +3851,24 @@ class Engine {
   
     // A function of conditions for a file to be hidden,
     // for now files are only hidden if they have '.' at the front.
-    private boolean fileHidden(String filename) {
+    public boolean fileHidden(String filename) {
       if (filename.length() > 0) {
         if      (filename.charAt(0) == '.') return true;
         else if (filename.equals("desktop.ini")) return true;
       }
       return false;
+    }
+    
+    public String unhide(String original) {
+      String name = getFilename(original);
+      String dir  = getDir(original);
+      
+      if (dir.length() > 1) {
+        dir = directorify(dir);
+      }
+      
+      if (name.charAt(0) == '.') name = name.substring(1);
+      return dir+name;
     }
   
     // Opens the dir and populates the currentFiles list.
@@ -3480,33 +3986,14 @@ class Engine {
       String ext = getExt(filePath);
       // Stuff to open with our own app (timeway)
       if (ext.equals(ENTRY_EXTENSION)) {
-        console.bugWarn("TODO: screen to editor");
-        //currScreen.requestScreen(new Editor(engine, filePath));
+        twengineRequestEditor(filePath);
       }
   
       // Anything else which is opened by a windows app or something.
       // TODO: use xdg-open in linux.
       // TODO: figure out how to open apps with MacOS.
       else {
-        if (Desktop.isDesktopSupported()) {
-          // Open desktop app with this snippet of code that I stole.
-          try {
-            Desktop desktop = Desktop.getDesktop();
-            File myFile = new File(filePath);
-            try {
-              desktop.open(myFile);
-            }
-            catch (IllegalArgumentException fileNotFound) {
-              console.log("This file or dir no longer exists!");
-              refreshDir();
-            }
-          } 
-          catch (IOException ex) {
-            console.warn("Couldn't open file IOException");
-          }
-        } else {
-          console.warn("Couldn't open file, isDesktopSupported=false.");
-        }
+        desktopOpen(filePath);
       }
     }
   
@@ -3515,35 +4002,7 @@ class Engine {
       if (file.isDirectory()) {
         openDirInNewThread(path);
       } else {
-        // Stuff to open with our own app (timeway)
-        if (file.fileext.equals(ENTRY_EXTENSION)) {
-          console.warn("TODO: Enter editor");
-          //currScreen.requestScreen(new Editor(engine, path));
-        }
-  
-        // Anything else which is opened by a windows app or something.
-        // TODO: use xdg-open in linux.
-        // TODO: figure out how to open apps with MacOS.
-        else {
-          if (Desktop.isDesktopSupported()) {
-            // Open desktop app with this snippet of code that I stole.
-            try {
-              Desktop desktop = Desktop.getDesktop();
-              File myFile = new File(path);
-              try {
-                desktop.open(myFile);
-              }
-              catch (IllegalArgumentException fileNotFound) {
-                console.log("This file or dir no longer exists!");
-                refreshDir();
-              }
-            } 
-            catch (IOException ex) {
-            }
-          } else {
-            console.warn("Couldn't open file, isDesktopSupported=false.");
-          }
-        }
+        desktopOpen(path);
       }
     }
   
@@ -3814,6 +4273,9 @@ class Engine {
       if (ext.equals("png")) {
         return getPNGUncompressedSize(path);
       }
+      else if (ext.equals(ENTRY_EXTENSION)) {
+        return 0;
+      }
       else if (ext.equals("jpg") || ext.equals("jpeg")) {
         return getJPEGUncompressedSize(path);
       }
@@ -3833,10 +4295,382 @@ class Engine {
   AtomicBoolean loadedEverything = new AtomicBoolean(false);
   
   
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  public class PluginModule {
+    
+    private String pluginBoilerplateCode_1 = "";
+    private String pluginBoilerplateCode_2 = "";
+    private String javapath;
+    private int cacheEntry = 0;
+
+    
+    // We need this because simply storing the output message in a command line
+    // is not sufficient; we need error code, whether it was successful or not etc.
+    class CmdOutput {
+      public int exitCode = -1;
+      public boolean success = false;
+      public String message = "";
+      
+      public CmdOutput(int ec, String mssg) {
+        exitCode = ec;
+        success =  (exitCode == 0);
+        message = mssg;
+      }
+    }
+    
+    public PluginModule() {
+      // Load the boilerplate for plugin code.
+      if (file.exists(APPPATH+BOILERPLATE_PATH)) {
+        String[] txts = app.loadStrings(APPPATH+BOILERPLATE_PATH);
+        boolean secondPart = false;
+        for (String s : txts) {
+          if (!secondPart && s.trim().equals("[plugin_code]")) {
+            // Don't add [plugin_code] line, initiate the second part.
+            secondPart = true;
+          }
+          else if (!secondPart)
+            pluginBoilerplateCode_1 += s+"\n";
+          else
+            pluginBoilerplateCode_2 += s+"\n";
+        }
+      }
+      else {
+        console.warn(APPPATH+BOILERPLATE_PATH+" not found! Plugins will not work.");
+      }
+      
+      // Get the location of java that is currently running our beloved timeway (we will need it
+      // for compiling classes)
+      String pp = (new File(".").getAbsolutePath());
+      javapath = pp.substring(0, pp.length()-2).replaceAll("\\\\", "/")+"/java";
+    }
+
+    // Actual plugin object
+    public class Plugin {
+      // These are needed to load the java code
+      private Class pluginClass;
+      
+      // These are needed for comminication between master and slave
+      // (Timeway is master and plugin is slave)
+      // (yes, it's kinda an offensive term but this is what it's
+      // called in the computing world unfortunately.)
+      private Method pluginRunPoint;
+      private Method pluginGetOpCode;
+      private Method pluginGetArgs;
+      private Method pluginSetRet;
+      private Object pluginIntance;
+      
+      // Need this because the run method needs our plugin object.
+      private Plugin thisPlugin;
+      
+      public boolean compiled = false;
+      public String errorOutput = "";
+      
+      // Famous callAPI method.
+      // Remember that whenever our plugin (slave) wants to call an API method from master,
+      // using a runnable method is the way for inter-plugin communication.
+      private Runnable callAPI = new Runnable() {
+            public void run() {
+              runAPI(thisPlugin);
+            }
+      };
+      
+      public Plugin() {
+        this.thisPlugin = this;
+      }
+      
+      // Call this to run a cycle of the plugin.
+      void run() {
+        if (compiled && pluginRunPoint != null && pluginIntance != null) {
+          try {
+            pluginRunPoint.invoke(pluginIntance);
+          }
+          catch (Exception e) {
+            System.err.println("Run plugin exception: "+ e.getClass().getSimpleName());
+            exit();
+          }
+        }
+      }
+      
+      // Loads class from file.
+      void loadPlugin(String pluginPath) {
+        //System.out.println("Loading plugin "+pluginPath);
+        
+        // Here, we do some wacky java stuff I found online to slap some java code into Timeway
+        // during runtime.
+        URLClassLoader child = null;
+        try {
+          child = new URLClassLoader(
+                  new URL[] {new File(pluginPath).toURI().toURL()},
+                  this.getClass().getClassLoader()
+          );
+        }
+        catch (Exception e) {
+          console.warn("URL Exception: "+ e.getClass().getSimpleName());
+        }
+        
+        // Dunno why we set pluginClass to null but imma keep it that
+        // way so it doesn't break things.
+        pluginClass = null;
+        try {
+          // TODO: Is having the same class name for each plugin bad? Eh, I guess we'll find out soon enough.
+          pluginClass = Class.forName("CustomPlugin", true, child);
+          // Get the run() method
+          pluginRunPoint = pluginClass.getDeclaredMethod("run");
+          // annnnd rest should be self-explainatory
+          pluginGetOpCode = pluginClass.getDeclaredMethod("getCallOpCode");
+          pluginGetArgs = pluginClass.getDeclaredMethod("getArgs");
+          pluginSetRet = pluginClass.getDeclaredMethod("setRet", Object.class);
+          pluginIntance = pluginClass.getDeclaredConstructor().newInstance();
+        }
+        // TODO: extended error-catching.
+        catch (Exception e) {
+          console.warn("LoadPlugin Exception: "+ e.getClass().getSimpleName());
+        }
+        
+        // here we call setup(). Maybe TODO: perhaps we should have an onLoad() then an actual setup()?
+        try {
+          Method passAppletMethod = pluginClass.getDeclaredMethod("setup", PApplet.class, Runnable.class);
+          
+          passAppletMethod.invoke(pluginIntance, app, callAPI);
+        }
+        // TODO: extended error checking
+        catch (Exception e) {
+          System.err.println("passPApplet Exception: "+ e.getClass().getSimpleName());
+          System.err.println(e.getMessage());
+        }
+      }
+      
+      
+      // Compiles the code into a file, then loads the file.
+      // And you read this method right, you just provide the code into
+      // this method and boom, it'll compile just like that.
+      public boolean compile(String code) {
+        // You might be thinking it's ineffective to just keep
+        // counting up the cacheEntries, but they're held on by
+        // java (meaning we can't delete them) until the program
+        // closes, at which point cacheEntry will obviously be
+        // 0, so it'll just end up overwriting the old dead cached
+        // entries.
+        cacheEntry++;
+        compiled = false;
+        
+        console.log("Compiling plugin...");
+        
+        // We don't actually need the cache info, but calling this method will
+        // create the cache folder if it doesn't already exist, which is wayyyy
+        // less work and coding to do. Plus it'll automatically close after 10
+        // frames, you know the routine.
+        openCacheInfo();
+        
+        // Now remember, we go
+        // raw code -> java file (combined with boilerplate) -> class file -> jar file.
+        final String javaFileOut = CACHE_PATH+"CustomPlugin.java";
+        final String classFileOut = CACHE_PATH+"CustomPlugin.class";
+        
+        // raw code -> java file
+        String fullCode = pluginBoilerplateCode_1+code+pluginBoilerplateCode_2;
+        app.saveStrings(javaFileOut, fullCode.split("\n"));
+        
+        // java file -> class file
+        CmdOutput cmd = toClassFile(javaFileOut);
+        compiled = cmd.success;
+        
+        if (!compiled) {
+          this.errorOutput = cmd.message;
+          return false;
+        }
+        this.errorOutput = "";
+        
+        // class file -> executable jar
+        String executableJarFile = toJarFile(classFileOut);
+        
+        // Finally, load the plugin!
+        loadPlugin(executableJarFile);
+        return true;
+      }
+      
+      // Now the following methods are to be used by the runAPI functions.
+      // Imagine this: slave sends API function, master gets the opcode,
+      // gets the arguments, and then returns the value.
+      public void ret(Object val) {
+        try {
+          pluginSetRet.invoke(pluginIntance, val);
+        }
+        catch (Exception e) {
+          // TODO: extended error checking
+          println("Ohno");
+        }
+      }
+      
+      // Get the API opcode called from slave
+      public int getOpCode() {
+        try {
+          return (int) pluginGetOpCode.invoke(pluginIntance);
+        }
+        catch (Exception e) {
+          // TODO: extended error checking
+          println("Ohno");
+          return -1;
+        }
+      }
+      
+      // Get the arguments from the API call from slave.
+      public Object[] getArgs() {
+        try {
+          return (Object[]) pluginGetArgs.invoke(pluginIntance);
+        }
+        catch (Exception e) {
+          // TODO: extended error checking
+          println("Ohno");
+          return null;
+        }
+      }
+      
+    }
+    // End plugin class.
+    
+    // Literally no point to this other than so you don't
+    // need to type out TWEngine.PluginModule.Plugin each time.
+    // Damn I need to sort out Timeway...
+    public Plugin createPlugin() {
+      return new Plugin();
+    }
+    
+    // Now this thing basically just runs a windows command, not too complicated.
+    // If I'm lucky enough, I think this thing should work in linux too even though
+    // the cmd system is completely different, because we're essentially just calling
+    // some java executables.
+    public CmdOutput runOSCommand(String cmd) {
+      try {
+        // Run the OS command
+        Process process = Runtime.getRuntime().exec(cmd);
+        
+        // Get the messages from the console (so that we can get stuff like error messages).
+        BufferedReader stdInput = new BufferedReader(new InputStreamReader(process.getInputStream()));
+        BufferedReader stdError = new BufferedReader(new InputStreamReader(process.getErrorStream()));
+        
+        // This function should prolly run this in a different thread.
+        int exitCode = process.waitFor();
+        
+        // s will be used to read the stdout lines.
+        String s = null;
+        
+        // Where we'll actually store our stdoutput
+        String stdoutput = "";
+        
+        if (exitCode == 1) {
+          while ((s = stdInput.readLine()) != null) {
+              stdoutput += s+"\n";
+          }
+          // Truth be told, i should prolly have seperate stdout and stderr
+          // but I don't really mind combining it into one message.
+          while ((s = stdError.readLine()) != null) {
+              stdoutput += s+"\n";
+          }
+          
+          //System.out.println(stdoutput);
+        }
+        
+        //System.out.println("Exit code: "+exitCode);
+        // Done!
+        return new CmdOutput(exitCode, stdoutput);
+      }
+      // No need to do additional error checking here because I highly doubt we will get this kind
+      // of error unless we intentionally realllllllly mess up some files here.
+      catch (Exception e) {
+        console.warn("OS command exception: "+ e.getClass().getSimpleName());
+        console.warn(e.getMessage());
+        // 666 eeeeeevil number.
+        return new CmdOutput(666, e.getClass().getSimpleName());
+      }
+    }
+    
+    // Use javac (java compiler) to turn our file into a .class file.
+    // I have no idea what a .class file is lol.
+    CmdOutput toClassFile(String inputFile) {
+      final String javacPath = javapath+"/bin/javac.exe";
+      
+      // TODO: we might not need... this.
+      // If we're not too lazy to create a binding.
+      console.bugWarn("Remember to auto get processingCorePath instead of that specific path on your computer!");
+      final String processingCorePath = "C:/mydata/apps/processing-4.3/core/library/core.jar";
+      
+      // Stored in the cache folder.
+      final String pluginPath = CACHE_PATH;
+      
+      // run as if we've opened up cmd/terminal and are running our command.
+      CmdOutput cmd = runOSCommand("\""+javacPath+"\" -cp \""+processingCorePath+";"+pluginPath+"\" \""+inputFile+"\"");
+      return cmd;
+    }
+    
+    String toJarFile(String classFile) {
+      // Good ol jar thingie.
+      final String jarExePath = javapath+"/bin/jar.exe";
+      
+      // In our cachepath.
+      final String out = CACHE_PATH+"plugin-"+cacheEntry+".jar";
+      
+      // We need the class path because the command line argument is weird,
+      // (that might be an issue if we have tons of other items in our cache folder but oh well)
+      final String classPath = (new File(classFile)).getParent().toString();
+      final String className = (new File(classFile)).getName();
+      
+      // And boom. It is then done.
+      runOSCommand("\""+jarExePath+"\" cvf \""+out+"\" -C \""+classPath+"\" "+className);
+      
+      return out;
+    }
+    
+    public void runAPI(Plugin p) {
+      // The getCallOpCode method takes no arguments and returns an int
+      // The getArgs method takes no arguments and returns an Object[]
+      // The setRet method takes an Object as argument and returns void
+      int opcode = p.getOpCode();
+      Object[] args = p.getArgs();
+      // Opcode of -1 means there was a class-based error with calling the
+      // getOpCode method in slave. Same applies with args being null
+      if (opcode == -1 || args == null) {
+        // error handling code
+        return;
+      }
+      // Run TimeWay's Interfacing Toolkit
+      // We're returning stuff every time, but it should not matter
+      // if a method does not expect something to return, because
+      // it shouldn't check the returned value.
+      p.ret(runTWIT(opcode, args));
+    }
+  }
+  
+  
+  
   // *************************************************************
   // *********************Begin engine code***********************
   // *************************************************************
-  public Engine(PApplet p) {
+  public TWEngine(PApplet p) {
     // PApplet & engine init stuff
     app = p;
     app.background(0);
@@ -3845,15 +4679,26 @@ class Engine {
     console = new Console();
     console.info("Hello console");
     
+    if (isAndroid()) {
+      APPPATH = "";
+      CACHE_PATH = getAndroidCacheDir();
+    }
+    else {
+      // TODO: This is ugly and unmaintainable.
+      CACHE_PATH = APPPATH+"cache/";
+    }
+    
     settings = new SettingsModule();
     input = new InputModule();
-    file = new FilemanagerModule(this);
+    file = new FilemanagerModule();
+    stats = new StatsModule();
     sharedResources = new SharedResourcesModule();
     display = new DisplayModule();
     power = new PowerModeModule();
     ui = new UIModule();
     sound = new AudioModule();
     clipboard = new ClipboardModule();
+    plugins = new PluginModule();
     
     power.putFPSSystemIntoGraceMode();
     
@@ -3862,10 +4707,25 @@ class Engine {
     loadAsset(APPPATH+SOUND_PATH+"intro.wav");
     loadAsset(APPPATH+IMG_PATH+"logo.png");
     loadAllAssets(APPPATH+IMG_PATH+"loadingmorph/");
+    // We need to load shaders on the main thread.
+    loadAllAssets(APPPATH+SHADER_PATH);
     // Find out how many images there are in loadingmorph
     File f = new File(APPPATH+IMG_PATH+"loadingmorph/");
-    display.loadingFramesLength = f.listFiles().length;
+    
+    // Idc
+    if (isAndroid()) {
+      display.loadingFramesLength = 84;
+    }
+    else {
+      display.loadingFramesLength = f.listFiles().length;
+    }
     loadAsset(APPPATH+DEFAULT_FONT_PATH);
+    
+    stats.increase("started_up", 1);
+    // Huh, "Timeaway" sounds strangely familiar, huh?
+    int lastClosed = stats.getInt("last_closed") > 1000 ? stats.getInt("last_closed") : ((int)(System.currentTimeMillis() / 1000L));
+    int timeAway = ((int)(System.currentTimeMillis() / 1000L))-lastClosed;
+    stats.setIfHigher("longest_time_away", timeAway);
     
     // Load in seperate thread.
     loadedEverything.set(false);
@@ -3888,9 +4748,11 @@ class Engine {
     DEFAULT_FONT_NAME = settings.getString("defaultSystemFont");
     
     DEFAULT_FONT = display.getFont(DEFAULT_FONT_NAME);
-
+  }
+  
+  public void startScreen(Screen screen) {
     // Init loading screen.
-    currScreen = new Startup(this);
+    currScreen = screen;
   }
 
 
@@ -3905,20 +4767,11 @@ class Engine {
     input.addNewlineWhenEnterPressed = false;
     promptText = prompt;
     doWhenPromptSubmitted = doWhenSubmitted;
+    openTouchKeyboard();
   }
 
   public void displayInputPrompt() {
     if (inputPromptShown) {
-      // this is such a placeholder lol
-      app.noStroke();
-
-      app.fill(255);
-      app.textAlign(CENTER, CENTER);
-      app.textFont(DEFAULT_FONT, 60);
-      app.text(promptText, display.WIDTH/2, display.HEIGHT/2-100);
-      app.textSize(30);
-      app.text(input.keyboardMessage, display.WIDTH/2, display.HEIGHT/2);
-      
       if (keyCode == UP) {
         keyCode = 0;
         if (lastInput.length() > 0) {
@@ -3932,16 +4785,32 @@ class Engine {
           input.keyboardMessage += clipboard.getText();
         }
       }
+      
+      float buttonwi = 200;
+      boolean button = ui.basicButton("Enter", display.WIDTH/2-buttonwi/2, display.HEIGHT/2+50, buttonwi, 50);
 
-      if (input.enterOnce) {
+      if (input.enterOnce || button) {
         inputPromptShown = false;
-        if (input.keyboardMessage.length() <= 0) return;
+        //if (input.keyboardMessage.length() <= 0) return;
         // Remove enter character at end
-        int ll = max(input.keyboardMessage.length()-1, 0);   // Don't allow it to go lower than 0
-        if (input.keyboardMessage.charAt(ll) == '\n') input.keyboardMessage = input.keyboardMessage.substring(0, ll);
+        if (input.keyboardMessage.length() > 0) {
+          int ll = max(input.keyboardMessage.length()-1, 0);   // Don't allow it to go lower than 0
+          if (input.keyboardMessage.charAt(ll) == '\n') input.keyboardMessage = input.keyboardMessage.substring(0, ll);
+        }
         doWhenPromptSubmitted.run();
         lastInput = input.keyboardMessage;
+        closeTouchKeyboard();
       }
+      
+      // this is such a placeholder lol
+      app.noStroke();
+
+      app.fill(255);
+      app.textAlign(CENTER, CENTER);
+      app.textFont(DEFAULT_FONT, 60);
+      app.text(promptText, display.WIDTH/2, display.HEIGHT/2-100);
+      app.textSize(30);
+      app.text(input.keyboardMessage, display.WIDTH/2, display.HEIGHT/2);
     }
   }
 
@@ -4064,15 +4933,14 @@ class Engine {
   }
   
   public void runOSCommand(String cmd) {
-    switch (platform) {
-      case WINDOWS:
+    if (isWindows()) {
         String[] cmds = new String[1];
         cmds[0] = cmd;
         app.saveStrings(APPPATH+WINDOWS_CMD, cmds);
         delay(100);
         file.open(APPPATH+WINDOWS_CMD);
-      break;
-      default:
+    }
+    else {
       console.bugWarn("runOSCommand: support for os not implemented!");
     }
   }
@@ -4096,16 +4964,14 @@ class Engine {
       // java 8 package.
       int fileSize = 1;
       String plat = "";
-      switch (platform) {
-      case WINDOWS:
+      if (isWindows()) {
         plat = "windows-download-size";
-        break;
-      case LINUX:
+      }
+      else if (isLinux()) {
         plat = "linux-download-size";
-        break;
-      case MACOS:
+      }
+      else if (isMacOS()) {
         plat = "macos-download-size";
-        break;
       }
 
       // Get size
@@ -4143,7 +5009,7 @@ class Engine {
       textFont(DEFAULT_FONT, 30);
       text("Downloading...", x1-wi+128, y1+10, wi*2-128, hi);
       textSize(20);
-      text("You can continue using Timeway while updating.", x1-wi+128, y1+50, wi*2-128, hi);
+      text("You can continue using "+APP_NAME+" while updating.", x1-wi+128, y1+50, wi*2-128, hi);
       // Process bar
       fill(0, 127);
       rect(x1-wi+128+10, y1+hi-15, (float(downloadPercent)/100.)*((wi*2)-128-30), 3);
@@ -4203,7 +5069,7 @@ class Engine {
       textFont(DEFAULT_FONT, 30);
       text("Extracting...", x1-wi+128, y1+10, wi*2-128, hi);
       textSize(20);
-      text("Timeway will restart in the new version shortly.", x1-wi+128, y1+50, wi*2-128, hi);
+      text(APP_NAME+" will restart in the new version shortly.", x1-wi+128, y1+50, wi*2-128, hi);
       
       downloadPercent = completionPercent.get();
       // Process bar
@@ -4220,16 +5086,14 @@ class Engine {
         delay(1000);
         if (updateError.length() == 0) {
           String exeloc = "";
-          switch (platform) {
-            case WINDOWS:
+          if (isWindows()) {
               exeloc = updateInfo.getString("windows-executable-location", "");
-              break;
-            case LINUX:
+          }
+          else if (isLinux()) {
               exeloc = updateInfo.getString("linux-executable-location", "");
-              break;
-            case MACOS:
+          }
+          else if (isMacOS()) {
               exeloc = updateInfo.getString("macos-executable-location", "");
-              break;
           }
           // TODO: move files from old version
           String newVersion = file.getMyDir()+exeloc;
@@ -4237,14 +5101,14 @@ class Engine {
           if (f.exists()) {
             updatePhase = 0;
             //Process p = Runtime.getRuntime().exec(newVersion);
-            String cmd = "start \"Timeway\" /d \""+file.getDir(newVersion).replaceAll("/", "\\\\")+"\" \""+file.getFilename(newVersion)+"\"";
+            String cmd = "start \""+APP_NAME+"\" /d \""+file.getDir(newVersion).replaceAll("/", "\\\\")+"\" \""+file.getFilename(newVersion)+"\"";
             console.log(cmd);
             runOSCommand(cmd);
             delay(500);
             exit();
           }
           else {
-            console.warn("New version of Timeway could not be found, please close Timeway and open new version manually.");
+            console.warn("New version of "+APP_NAME+" could not be found, please close "+APP_NAME+" and open new version manually.");
             console.log("The new version should be somewhere in "+newVersion);
             updatePhase = 0;
           }
@@ -4282,15 +5146,15 @@ class Engine {
   }
   
   public String getExeFilename() {
-    switch (platform) {
-      case WINDOWS:
-      return "Timeway.exe";
-      case LINUX:
+    if (isWindows()) {
+      // TODO: Smarter finding filename?
+      return APP_NAME+".exe";
+    }
+    else if (isLinux()) {
       console.bugWarn("getExeFilename(): Not implemented for Linux");
-      break;
-      case MACOS:
+    }
+    else if (isMacOS()) {
       console.bugWarn("getExeFilename(): Not implemented for MacOS");
-      break;
     }
     return "";
   }
@@ -4299,14 +5163,14 @@ class Engine {
     String cmd = "";
     
     // TODO: make restart work while in Processing (dev mode)
-    switch (platform) {
-      case WINDOWS:
-      cmd = "start \"Timeway\" /d \""+file.getMyDir().replaceAll("/", "\\\\")+"\" \""+getExeFilename()+"\"";
-      break;
-      case LINUX:
+    if (isWindows()) {
+      cmd = "start \""+APP_NAME+"\" /d \""+file.getMyDir().replaceAll("/", "\\\\")+"\" \""+getExeFilename()+"\"";
+    }
+    else if (isLinux()) {
       console.bugWarn("restart(): Not implemented for Linux");
       return;
-      case MACOS:
+    }
+    else if (isMacOS()) {
       console.bugWarn("restart(): Not implemented for MacOS");
       return;
     }
@@ -4371,6 +5235,8 @@ class Engine {
 
 
   public void runCommand(String command) throws RuntimeException {
+    boolean success = true;
+    
     // TODO: have a better system for commands.
     if (command.equals("/powersaver")) {
       if (!power.getPowerSaver()) {
@@ -4410,24 +5276,29 @@ class Engine {
       if (console.debugInfo) console.log("Debug info enabled.");
       else console.log("Debug info disabled.");
     } else if (commandEquals(command, "/update")) {
-      shownUpdateScreen = false;
-      showUpdateScreen = false;
-      getUpdateInfo();
-      // Force delay
-      while (!updateInfoLoaded.get()) { delay(10); }
-      processUpdate();
-      if (showUpdateScreen) {
-        //currScreen.requestScreen(new Updater(this, this.updateInfo));
-        console.log("An update is available!");
+      if (isAndroid()) {
+        console.log("Can't update within the app, check https://teojt.github.io/timeway for updates!");
       }
-      else console.log("No updates available.");
+      else {
+        shownUpdateScreen = false;
+        showUpdateScreen = false;
+        getUpdateInfo();
+        // Force delay
+        while (!updateInfoLoaded.get()) { delay(10); }
+        processUpdate();
+        if (showUpdateScreen) {
+          
+          console.log("An update is available!");
+        }
+        else console.log("No updates available.");
+      }
     } 
     else if (commandEquals(command, "/throwexception")) {
       console.log("Prepare for a crash!");
       throw new RuntimeException("/throwexception command");
     }
     else if (commandEquals(command, "/restart")) {
-      console.log("Restarting Timeway...");
+      console.log("Restarting "+APP_NAME+"...");
       restart();
     }
     else if (commandEquals(command, "/backgroundmusic") || commandEquals(command, "/backmusic")) {
@@ -4471,36 +5342,11 @@ class Engine {
       display.reloadShaders();
       console.log("Shaders reloaded.");
     }
-    //else if (commandEquals(command, "/thread")) {
-      
-    //  String arg = "";
-    //  if (command.length() > 8)
-    //    arg = command.substring(8);
-      
-    //  Thread[] threads = new Thread[Thread.activeCount()];
-    //  Thread.enumerate(threads);
-    //  for (Thread thread : threads) {
-    //    if (!thread.isAlive()) continue;
-    //      if (thread.getName().equals(arg)) {
-    //        console.log(arg+"   M A X     P R I O R I T Y");
-    //        thread.setPriority(Thread.MAX_PRIORITY);
-    //        //console.log("K I L L E D   "+arg);
-    //        //try {
-    //        //  thread.stop();
-    //        //}
-    //        //catch (RuntimeException e) {
-    //        //  console.warn("Killing "+arg+" failed");
-    //        //}
-    //      }
-    //      else {
-    //        thread.setPriority(Thread.MIN_PRIORITY);
-    //        console.log(thread.getName() + " " + thread.getPriority());
-    //      }
-    //  }
-      
-    //}
-    
-    
+    else if (commandEquals(command, "/memusage")) {
+      display.showMemUsage = !display.showMemUsage;
+      if (display.showMemUsage) console.log("Memory usage bar shown.");
+      else console.log("Memory usage bar hidden.");
+    }
     // No commands
     else if (command.length() <= 1) {
       // If empty, do nothing and close the prompt.
@@ -4508,7 +5354,10 @@ class Engine {
       // Do nothing, we just don't want it to return "unknown command" for a custom command.
     } else {
       console.log("Unknown command.");
+      success = false;
     }
+    if (success)
+      stats.increase("commands_entered", 1);
   }
 
 
@@ -4540,7 +5389,7 @@ class Engine {
         else {
           console.log("Benchmark ended");
           benchmark = false;
-          //currScreen.requestScreen(new Benchmark(this));
+          twengineRequestBenchmarks();
         }
       }
     }
@@ -4592,20 +5441,23 @@ class Engine {
   AtomicBoolean updateInfoLoaded = new AtomicBoolean(false);
   public boolean showUpdateScreen = false;
   public void getUpdateInfo() {
-    Thread t = new Thread(new Runnable() {
-      public void run() {
-        try {
-          updateInfo = loadJSONObject(UPDATE_INFO_URL);
+    // That's right, the update feature goes completely unused in android.
+    if (!isAndroid()) {
+      Thread t = new Thread(new Runnable() {
+        public void run() {
+          try {
+            updateInfo = loadJSONObject(UPDATE_INFO_URL);
+          }
+          catch (Exception e) {
+            console.warn("Couldn't get update info");
+          }
+          updateInfoLoaded.set(true);
         }
-        catch (Exception e) {
-          console.warn("Couldn't get update info");
-        }
-        updateInfoLoaded.set(true);
       }
+      );
+      updateInfoLoaded.set(false);
+      t.start();
     }
-    );
-    updateInfoLoaded.set(false);
-    t.start();
   }
 
 
@@ -4616,12 +5468,12 @@ class Engine {
       boolean update = true;
       try {
         update &= updateInfo.getString("type", "").equals("update");
-        update &= !updateInfo.getString("version", "").equals(this.VERSION);
+        update &= !updateInfo.getString("version", "").equals(VERSION);
         JSONArray compatibleVersion = updateInfo.getJSONArray("compatible-versions");
 
         boolean compatible = false;
         for (int i = 0; i < compatibleVersion.size(); i++) {
-          compatible |= compatibleVersion.getString(i).equals(this.VERSION);
+          compatible |= compatibleVersion.getString(i).equals(VERSION);
         }
         compatible |= updateInfo.getBoolean("update-if-incompatible", false);
         compatible |= updateInfo.getBoolean("update-if-uncompatible", false);    // Oops I made a typo at one point
@@ -4630,16 +5482,14 @@ class Engine {
 
         // Check if there's a release available for the platform Timeway is running on.
         String downloadURL = "";
-        switch (platform) {
-        case WINDOWS:
+        if (isWindows()) {
           downloadURL = updateInfo.getString("windows-download", "[none]");
-          break;
-        case LINUX:
+        }
+        else if (isLinux()) {
           downloadURL = updateInfo.getString("linux-download", "[none]");
-          break;
-        case MACOS:
+        }
+        else if (isMacOS()) {
           downloadURL = updateInfo.getString("macos-download", "[none]");
-          break;
         }
         update &= !(downloadURL.equals("[none]") || downloadURL.equals("null"));
 
@@ -4793,7 +5643,7 @@ class Engine {
       try {
         consoleFont = createFont(APPPATH+CONSOLE_FONT, 24);
       }
-      catch (NullPointerException e) {
+      catch (RuntimeException e) {
         createFontFailed = true;
       }
       if (createFontFailed) consoleFont = null;
@@ -4989,156 +5839,6 @@ class Engine {
     }
   }
 
-  // Return true if successfully opened
-  // false if failed
-  public boolean openJSONArray(String path) {
-    try {
-      loadedJsonArray = app.loadJSONArray(path);
-    }
-    catch (RuntimeException e) {
-      console.warn("Failed to open JSON file, there was an error: "+e.getMessage());
-      return false;
-    }
-
-    // If the file doesn't exist
-    if (loadedJsonArray == null) {
-      console.warn("What. The file doesn't exist.");
-      return false;
-    }
-
-    return true;
-  }
-
-  JSONObject loadedJsonObject = null;
-
-  // Return true if successfully opened
-  // false if failed
-  public boolean openJSONObject(String path) {
-    try {
-      loadedJsonObject = app.loadJSONObject(path);
-    }
-    catch (RuntimeException e) {
-      console.warn("Failed to open JSON file, there was an error: "+e.getMessage());
-      return false;
-    }
-
-    // If the file doesn't exist
-    if (loadedJsonObject == null) {
-      console.warn("What. The file doesn't exist.");
-      return false;
-    }
-
-    return true;
-  }
-
-
-  public int getJSONInt(String property, int defaultValue) {
-    if (loadedJsonObject == null) {
-      console.bugWarn("Cannot get property, entry not opened.");
-      return defaultValue;
-    }
-    if (loadedJsonObject.isNull(property))
-      return defaultValue;
-    else
-      return loadedJsonObject.getInt(property);
-  }
-
-  public String getJSONString(String property, String defaultValue) {
-    if (loadedJsonObject == null) {
-      console.bugWarn("Cannot get property, entry not opened.");
-      return defaultValue;
-    }
-    if (loadedJsonObject.isNull(property))
-      return defaultValue;
-    else
-      return loadedJsonObject.getString(property);
-  }
-
-  public float getJSONFloat(String property, float defaultValue) {
-    if (loadedJsonObject == null) {
-      console.bugWarn("Cannot get property, entry not opened.");
-      return defaultValue;
-    }
-    if (loadedJsonObject.isNull(property))
-      return defaultValue;
-    else
-      return loadedJsonObject.getFloat(property);
-  }
-
-  public boolean getJSONBoolean(String property, boolean defaultValue) {
-    if (loadedJsonObject == null) {
-      console.bugWarn("Cannot get property, entry not opened.");
-      return defaultValue;
-    }
-    if (loadedJsonObject.isNull(property))
-      return defaultValue;
-    else
-      return loadedJsonObject.getBoolean(property);
-  }
-
-  public int getJSONArrayInt(int index, String property, int defaultValue) {
-    if (loadedJsonArray == null) {
-      console.bugWarn("Cannot get property, entry not opened.");
-      return defaultValue;
-    }
-    if (index > loadedJsonArray.size()) {
-      console.bugWarn("No more elements.");
-      return defaultValue;
-    }
-
-    int result = 0;
-    try {
-      result = loadedJsonArray.getJSONObject(index).getInt(property);
-    }
-    catch (Exception e) {
-      return defaultValue;
-    }
-
-    return result;
-  }
-
-  public String getJSONArrayString(int index, String property, String defaultValue) {
-    if (loadedJsonArray == null) {
-      console.bugWarn("Cannot get property, entry not opened.");
-      return defaultValue;
-    }
-    if (index > loadedJsonArray.size()) {
-      console.bugWarn("No more elements.");
-      return defaultValue;
-    }
-
-    String result = "";
-    try {
-      result = loadedJsonArray.getJSONObject(index).getString(property);
-    }
-    catch (Exception e) {
-      return defaultValue;
-    }
-
-    return result;
-  }
-
-  public float getJSONArrayFloat(int index, String property, float defaultValue) {
-    if (loadedJsonArray == null) {
-      console.warn("Cannot get property, entry not opened.");
-      return defaultValue;
-    }
-    if (index > loadedJsonArray.size()) {
-      console.warn("No more elements.");
-      return defaultValue;
-    }
-
-    float result = 0;
-    try {
-      result = loadedJsonArray.getJSONObject(index).getFloat(property);
-    }
-    catch (Exception e) {
-      return defaultValue;
-    }
-
-    return result;
-  }
-
 
   //*******************************************
   //****************ENGINE CODE****************
@@ -5157,14 +5857,14 @@ class Engine {
     //println(name);
 
     // We don't need to bother with content that's already been loaded.
-    if (loadedContent.contains(name)) {
+    if (loadedContent.contains(name) || name.equals("everything") || name.equals("load_list")) {
       return;
     }
     // if extension is image
     if (ext.equals("png") || ext.equals("jpg") || ext.equals("gif") || ext.equals("bmp")) {
       // load image and add it to the systemImages hashmap.
       if (display.systemImages.get(name) == null) {
-        display.systemImages.put(name, app.loadImage(path));
+        display.systemImages.put(name, new DImage(app.loadImage(path)));
         loadedContent.add(name);
       } else {
         console.warn("Image "+name+" already exists, skipping.");
@@ -5173,8 +5873,10 @@ class Engine {
       display.fonts.put(name, app.createFont(path, 32));
     } else if (ext.equals("vlw")) {
       display.fonts.put(name, app.loadFont(path));
-    } else if (ext.equals("glsl")) {
+    } else if (ext.equals("glsl") || ext.equals("vert")) {
       display.loadShader(path);
+    } else if (ext.equals("frag")) {
+      // Don't load anything since .vert also loads corresponding .frag
     } else if (ext.equals("wav") || ext.equals("ogg") || ext.equals("mp3")) {
       sound.sounds.put(name, new SoundFile(app, path));
     } else {
@@ -5184,21 +5886,42 @@ class Engine {
 
   public void loadAllAssets(String path) {
     // Get list of all assets in current dir
+    
+    
     File f = new File(path);
-    File[] assets = f.listFiles();
+    String[] assets = null;
+    
+    // Unfortunately in Android, we're not allowed to call listFiles()
+    // in our own data directory. Therefore, there is a list of predefined
+    // asset locations that tell our system which files to load.
+    // It should be in the same directory where we call loadAllAssets()
+    
+    if (isAndroid()) {
+      assets = app.loadStrings(file.directorify(path)+"load_list.txt");
+    }
+    else {
+      File[] files = f.listFiles();
+      assets = new String[files.length];
+      for (int i = 0; i < files.length; i++) {
+        assets[i] = files[i].getAbsolutePath();
+      }
+    }
     
     if (assets != null) {
       // Loop through all assets
       for (int i = 0; i < assets.length; i++) {
         // If asset is a directory
-        if (assets[i].isFile()) {
-          // Load asset
-          loadAsset(assets[i].getAbsolutePath());
+        String ext = file.getExt(assets[i]);
+        if (ext.length() <= 1) {
+          // Load all assets in that directory
+          loadAllAssets(assets[i]);
+          //println(assets[i]+" is dir");
         }
         // If asset is a file
-        else if (assets[i].isDirectory()) {
-          // Load all assets in that directory
-          loadAllAssets(assets[i].getAbsolutePath());
+        else {
+          // Load asset
+          loadAsset(assets[i]);
+          //println(assets[i]+" is file");
         }
       }
     }
@@ -5226,7 +5949,11 @@ class Engine {
     if (loadedEverything.get() == false) return true;
     
     // If caching's turned off wait for GStreamer.
-    if (!CACHE_MUSIC) {
+    if (isAndroid()) {
+      // Android doesn't wait for music
+      // Anyways do nothing here to stop the other code below running.
+    }
+    else if (!CACHE_MUSIC) {
       if (sound.loadingMusic()) return true;
     }
     else {
@@ -5236,58 +5963,45 @@ class Engine {
       // If we're not using the default music and the home realm with the .pixelrealm file isn't cached,
       // we have no choice but to wait (or start with silence but this isn't desireable so lets just report that its still loading) 
       
-      boolean cacheHit = true;
-      if (sound.loadingMusic() && !cacheHit)
+      
+      if (sound.loadingMusic() && !pixelrealmCache())
         return true;
     }
     
     return false;
   }
 
-  public String getLastModified(String path) {
-    Path file = Paths.get(path);
-
-    if (!file.toFile().exists()) {
-      return null;
-    }
-
-    BasicFileAttributes attr;
-    try {
-      attr = Files.readAttributes(file, BasicFileAttributes.class);
-    }
-    catch (IOException e) {
-      console.warn("Couldn't get date modified time: "+e.getMessage());
-      return null;
-    }
-
-    return attr.lastModifiedTime().toString();
-  }
 
   public int calculateChecksum(PImage image) {
     // To prevent a really bad bug from happening, only actually calculate the checksum if the image is bigger than say,
     // 64 pixels lol.
-    if (image.width > 64 || image.height > 64) {
-      int checksum = 0;
-      int w = image.width;
-      int h = image.height;
-
-      int gapx = int(image.width*0.099);
-      int gapy = int(image.height*0.099);
-
-      for (int y = 0; y < h; y+=gapy) {
-        for (int x = 0; x < w; x+=gapx) {
-          int pixel = image.get(x, y);
-          int red = (pixel >> 16) & 0xFF; // Extract red component
-          int green = (pixel >> 8) & 0xFF; // Extract green component
-          int blue = pixel & 0xFF; // Extract blue component
-
-          // Add the pixel values to the checksum
-          checksum += red + green + blue;
+    try {
+      if (image.width > 64 || image.height > 64) {
+        int checksum = 0;
+        int w = image.width;
+        int h = image.height;
+  
+        int gapx = int(image.width*0.099);
+        int gapy = int(image.height*0.099);
+  
+        for (int y = 0; y < h; y+=gapy) {
+          for (int x = 0; x < w; x+=gapx) {
+            int pixel = image.get(x, y);
+            int red = (pixel >> 16) & 0xFF; // Extract red component
+            int green = (pixel >> 8) & 0xFF; // Extract green component
+            int blue = pixel & 0xFF; // Extract blue component
+  
+            // Add the pixel values to the checksum
+            checksum += red + green + blue;
+          }
         }
-      }
-
-      return checksum;
-    } else return 0;
+  
+        return checksum;
+      } else return 0;
+    }
+    catch (RuntimeException e) {
+      return 0;
+    }
   }
 
   public JSONObject cacheInfoJSON = null;
@@ -5299,7 +6013,7 @@ class Engine {
   public void openCacheInfo() {
     boolean createNewInfoFile = false;
 
-    File cacheFolder = new File(APPPATH+CACHE_PATH);
+    File cacheFolder = new File(CACHE_PATH);
     if ((cacheFolder.exists() && cacheFolder.isDirectory()) == false) {
       console.info("openCacheInfo: cache folder gone, regenerating folder.");
       if (!cacheFolder.mkdir()) {
@@ -5311,13 +6025,12 @@ class Engine {
     // First, open the cache file if it's not been opened already.
     if (cacheInfoTimeout == 0) {
       // Should be true if the info file doesn't exist.
-      console.info("openCacheInfo: "+APPPATH+CACHE_INFO);
-      File f = new File(APPPATH+CACHE_INFO);
-      if (!f.exists()) {
+      console.info("openCacheInfo: "+CACHE_PATH+CACHE_INFO);
+      if (!file.exists(CACHE_PATH+CACHE_INFO)) {
         createNewInfoFile = true;
       } else {
         try {
-          cacheInfoJSON = loadJSONObject(APPPATH+CACHE_INFO);
+          cacheInfoJSON = loadJSONObject(CACHE_PATH+CACHE_INFO);
         }
         catch (RuntimeException e) {
           console.warn("Cache file is curroupted. Cache will be erased and regenerated.");
@@ -5343,7 +6056,7 @@ class Engine {
       // Create the new json file.
       cacheInfoJSON = new JSONObject();
       cacheInfoJSON.setString("?cache_compatibility_version", CACHE_COMPATIBILITY_VERSION);
-      saveJSONObject(cacheInfoJSON, APPPATH+CACHE_INFO);
+      saveJSONObject(cacheInfoJSON, CACHE_PATH+CACHE_INFO);
 
       cacheInfoTimeout = 0;
     }
@@ -5375,6 +6088,7 @@ class Engine {
     }
   }
   
+  
   // IMPORTANT NOTE: This function does NOT load in a seperate thread, so you should do that yourself
   // when using this!
   public SoundFile tryLoadSoundCache(String originalPath, Runnable readOriginalOperation) {
@@ -5396,7 +6110,7 @@ class Engine {
         if (actualPath.length() > 0) {
       File f = new File(originalPath);
       String lastModified = "[null]";        // Test below automatically fails if there's no file found.
-      if (f.exists()) lastModified = getLastModified(originalPath);
+      if (f.exists()) lastModified = file.getLastModified(originalPath);
       
         // Check if the sound has been modified at all since last time before we load the original.
         if (cachedItem.getString("lastModified", "").equals(lastModified)) {
@@ -5462,7 +6176,7 @@ class Engine {
 
           File f = new File(originalPath);
           String lastModified = "[null]";
-          if (f.exists()) lastModified = getLastModified(originalPath);
+          if (f.exists()) lastModified = file.getLastModified(originalPath);
 
           if (cachedItem.getString("lastModified", "").equals(lastModified)) {
             console.info("tryLoadImageCache: No modifications");
@@ -5490,7 +6204,7 @@ class Engine {
 
     // At this point we *should* have an image in cachedImage
     if (originalImage == null) {
-      console.bugWarn("tryLoadImageCache: Your runnable must store your loaded image using setOriginalImage(PImage image)");
+      //console.bugWarn("tryLoadImageCache: Your runnable must store your loaded image using setOriginalImage(PImage image)");
       return null;
     }
 
@@ -5541,18 +6255,18 @@ class Engine {
   }
   
 
-
+  // TODO: Put this in a seperate thread, because hoo lordy.
   public String saveCacheImage(String originalPath, PImage image) {
     console.info("saveCacheImage: "+originalPath);
-    if (image instanceof Gif) {
-      console.warn("Caching gifs not supported yet!");
-      return originalPath;
-    }
+    //if (image instanceof Gif) {
+    //  console.warn("Caching gifs not supported yet!");
+    //  return originalPath;
+    //}
     openCacheInfo();
 
     JSONObject properties = new JSONObject();
 
-    String cachePath = generateCachePath("png");
+    String cachePath = generateCachePath(CACHE_FILE_TYPE);
 
     final String savePath = cachePath;
     final int resizeByX = cacheShrinkX;
@@ -5574,9 +6288,8 @@ class Engine {
     properties.setString("actual", cachePath);
     properties.setInt("checksum", calculateChecksum(image));
     
-    File f = new File(originalPath);
-    if (f.exists()) {
-      properties.setString("lastModified", getLastModified(originalPath));
+    if (file.exists(originalPath)) {
+      properties.setString("lastModified", file.getLastModified(originalPath));
       properties.setInt("size", image.width*image.height*4);
     }
     else {
@@ -5588,28 +6301,37 @@ class Engine {
 
     cacheInfoJSON.setJSONObject(originalPath, properties);
     console.info("saveCacheImage: Done creating cache");
+    stats.increase("cache_files_created", 1);
 
     return cachePath;
   }
 
-
-  public PImage saveCacheImageBytes(String originalPath, byte[] bytes) {
+  // Don't care
+  @SuppressWarnings("unused")
+  public PImage saveCacheImageBytes(String originalPath, byte[] bytes, String type) {
     openCacheInfo();
 
-    JSONObject properties = new JSONObject();
 
-    String cachePath = generateCachePath("png");
+    String cachePath = generateCachePath(type);
 
     // Save it as a png.
     saveBytes(cachePath, bytes);
     // Load the png.
     PImage img = loadImage(cachePath);
-
-    properties.setString("actual", cachePath);
-    properties.setInt("checksum", calculateChecksum(img));
-    properties.setString("lastModified", "");
-    properties.setInt("size", 0);
-    cacheInfoJSON.setJSONObject(originalPath, properties);
+    
+    // TODO: I don't like this line of code at all...
+    //File f = new File(cachePath);
+    //f.delete();
+    
+    // Also remember to uncomment that.
+    // Actually... I think that's what was causing the annoying concurrentException bug...
+    // Let's leave that commented...
+    //JSONObject properties = new JSONObject();
+    //properties.setString("actual", cachePath);
+    //properties.setInt("checksum", calculateChecksum(img));
+    //properties.setString("lastModified", "");
+    //properties.setInt("size", 0);
+    //cacheInfoJSON.setJSONObject(originalPath, properties);
 
 
     return img;
@@ -5617,13 +6339,10 @@ class Engine {
 
   public String generateCachePath(String ext) {
     // Get a unique idenfifier for the file
-    String cachePath = APPPATH+CACHE_PATH+"cache-"+str(int(random(0, 2147483646)))+"."+ext;
-    File f = new File(cachePath);
-    while (f.exists()) {
-      cachePath = APPPATH+CACHE_PATH+"cache-"+str(int(random(0, 2147483646)))+"."+ext;
-      f = new File(cachePath);
+    String cachePath = CACHE_PATH+"cache-"+str(int(random(0, 2147483646)))+"."+ext;
+    while (file.exists(cachePath)) {
+      cachePath = CACHE_PATH+"cache-"+str(int(random(0, 2147483646)))+"."+ext;
     }
-
     return cachePath;
   }
   
@@ -5640,6 +6359,11 @@ class Engine {
     Float val = noiseCache.get(k);
     if (val == null) {
       float newval = app.noise(x, y);
+      
+      if (noiseCache.size() > 50000) {
+        // Just to be memory-safe.
+        noiseCache.clear();
+      }
       
       noiseCache.put(k, newval);
       return newval;
@@ -5716,6 +6440,8 @@ class Engine {
     public boolean secondaryClick = false;
     public boolean primaryDown = false;
     public boolean secondaryDown = false;
+    public boolean primaryReleased = false;
+    public boolean secondaryReleased = false;
     public boolean keyOnce = false;
     public boolean keyDown = false;
     
@@ -5741,8 +6467,10 @@ class Engine {
     
     private float cache_mouseX = 0.0;
     private float cache_mouseY = 0.0;
+    public  float scrollOffset = 0.0;
     
-    public int keys[]     = new int[1024];
+    public int keys[]       = new int[1024];
+    private int robotKeys[] = new int[1024];
     
     // Down
     public boolean backspaceDown = false;
@@ -5788,6 +6516,8 @@ class Engine {
       // this will not be updated at all hence remaining false.
       primaryClick = false;
       secondaryClick = false;
+      primaryReleased = false;
+      secondaryReleased = false;
       
       normalClickTimeout -= display.getDelta();
   
@@ -5814,6 +6544,8 @@ class Engine {
       }
       else if (!app.mousePressed && click) {
         click = false;
+        primaryReleased = (app.mouseButton != RIGHT);
+        secondaryReleased = (app.mouseButton == RIGHT);
         
         if (clickStartX != mouseX() || clickStartY != mouseY()) {
           mouseMoved = true;
@@ -5828,6 +6560,13 @@ class Engine {
         if (keys[i] > 0) {
           keys[i]++;
         }
+        if (robotKeys[i] > 0) {
+          robotKeys[i]++;
+          if (robotKeys[i] > 4) {
+            keys[i] = 0;
+            robotKeys[i] = 0;
+          }
+        }
       }
       
       // Special keys oneshots
@@ -5836,6 +6575,7 @@ class Engine {
       if (ctrlDown) ctrlDownCounter++; else ctrlDownCounter = 0;
       if (altDown) altDownCounter++; else altDownCounter = 0;
       if (enterDown) enterDownCounter++; else enterDownCounter = 0;
+      
       
       backspaceOnce = (backspaceDownCounter == 1);
       shiftOnce = (shiftDownCounter == 1);
@@ -5884,12 +6624,16 @@ class Engine {
         case ALT:
           altDown = false;
           break;
+        // For android
+        case 67:
+          backspaceDown = false;
+          break;
         }
       }
       else if (kkey == BACKSPACE || kkey == RETURN) {
         backspaceDown = false;
       }
-      else if (kkey == ENTER) {
+      else if (kkey == ENTER || kkey == RETURN || int(kkey) == 10) {
         enterDown = false;
       }
       // Down keys
@@ -5932,6 +6676,13 @@ class Engine {
         // Otherwise just tell us if the key is down or not
         return keyDown(k);
     }
+    
+    public void setAction(String keybindName) {
+      char k = settings.getKeybinding(keybindName);
+      int val = int(Character.toLowerCase(k));
+      keys[val] = 1;
+      robotKeys[val] = 1;
+    }
   
     public boolean keyActionOnce(String keybindName) {
       char k = settings.getKeybinding(keybindName);
@@ -5960,6 +6711,56 @@ class Engine {
     public float mouseY() {
       return cache_mouseY;
     }
+    
+    
+    // TODO: This is old code. Need I say more?
+    // It's also broken af.
+    public void processScroll(float top, float bottom) {
+      final float ELASTIC_MAX = 100.;
+      
+      if (scroll != 0.0) {
+        power.setAwake();
+      }
+      else {
+        power.setSleepy();
+      }
+      
+      int n = 1;
+      switch (power.getPowerMode()) {
+            case HIGH:
+            n = 1;
+            break;
+            case NORMAL:
+            n = 2;
+            break;
+            case SLEEPY:
+            n = 4;
+            break;
+            case MINIMAL:
+            n = 1;
+            break;
+      }
+      
+      // Sorry not sorry
+      for (int i = 0; i < n; i++) {
+        if (scrollOffset > top) {
+            scrollOffset -= (scrollOffset-top)*0.1;
+            if (input.scroll < 0.0) scrollOffset += input.scroll;
+            else scrollOffset += input.scroll*(max(0.0, ((ELASTIC_MAX+top)-scrollOffset)/ELASTIC_MAX));
+        }
+        else if (-scrollOffset > bottom) {
+            // TODO: Actually get some pen and paper and make the elastic band edge work.
+            // This is just a placeholder so that it's usable.
+            scrollOffset = -bottom;
+          
+            //scrollOffset += (bottom-scrollOffset)*0.1;
+            //if (engine.scroll > 0.0) scrollOffset += engine.scroll;
+            //else scrollOffset += engine.scroll*(max(0.0, ((-scrollOffset)-(ELASTIC_MAX+bottom))/ELASTIC_MAX));
+        }
+        else scrollOffset += input.scroll;
+      }
+    }
+      
     
     public void clickEventAction() {
       // We don't want to trigger a click if the normal clicking system receives a click.
@@ -5993,12 +6794,18 @@ class Engine {
           case ALT:
             altDown = true;
             return;
+          case 67:
+            this.backspace();
+            backspaceDown = true;
+            return;
         }
-      } else if (kkey == ENTER || kkey == RETURN) {
+        // 10 for android
+      } else if (kkey == ENTER || kkey == RETURN || int(kkey) == 10) {
         if (this.addNewlineWhenEnterPressed) {
           this.keyboardMessage += "\n";
         }
         enterDown = true;
+        // 65535 67 for android
       } else if (kkey == BACKSPACE) {    // Backspace
         this.backspace();
         backspaceDown = true;
@@ -6013,6 +6820,7 @@ class Engine {
       if (val >= 1024) return;
       if (keys[val] > 0) return;
       keys[val] = 1;
+      stats.increase("keys_pressed", 1);
     }
   }
 
@@ -6034,87 +6842,45 @@ class Engine {
     private Object cachedClipboardObject;
     
     public boolean isImage() {
-      if (cachedClipboardObject == null) cachedClipboardObject = getFromClipboard(DataFlavor.imageFlavor);
+      if (cachedClipboardObject == null) cachedClipboardObject = getPImageFromClipboard();
       
       // If still false, is nothing so isn't an image.
       if (cachedClipboardObject == null) return false;
-      return (cachedClipboardObject instanceof java.awt.Image);
+      return (cachedClipboardObject instanceof PImage);
     }
   
     public String getText()
     {
-      if (cachedClipboardObject == null) cachedClipboardObject = getFromClipboard(DataFlavor.stringFlavor);
+      if (cachedClipboardObject == null) cachedClipboardObject = getFromClipboardStringFlavour();
       String text = (String) cachedClipboardObject;
       cachedClipboardObject = null;
       return text;
     }
     
     public boolean isString() {
-      if (cachedClipboardObject == null) cachedClipboardObject = getFromClipboard(DataFlavor.stringFlavor);
+      if (cachedClipboardObject == null) cachedClipboardObject = getFromClipboardStringFlavour();
       
       // If still false, is nothing so isn't an image.
       if (cachedClipboardObject == null) return false;
       return (cachedClipboardObject instanceof String);
     }
   
-    // That can be the future's problem lol
-    @SuppressWarnings("deprecation")
-    public PImage getImage()
-    {
-      PImage img = null;
+    public PImage getImage() {
+      if (!isImage()) {
+        console.bugWarn("getImage: clipboard doesn't contain an image, make sure to check first with isImage()!");
+        return display.systemImages.get("white").pimage;
+      }
       
-      if (cachedClipboardObject == null) cachedClipboardObject = getFromClipboard(DataFlavor.imageFlavor);
-      
-      java.awt.Image image = (java.awt.Image) getFromClipboard(DataFlavor.imageFlavor);
-      
+      PImage ret = (PImage)cachedClipboardObject;
       cachedClipboardObject = null;
-      
-      if (image != null)
-      {
-        img = new PImage(image);
-      }
-      return img;
+      return ret;
     }
-  
-    private Object getFromClipboard(DataFlavor flavor)
-    {
-      Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-      Transferable contents;
-      try {
-        contents = clipboard.getContents(null);
-      }
-      catch (IllegalStateException e) {
-        contents = null;
-      }
-  
-      Object obj = null;
-      if (contents != null && contents.isDataFlavorSupported(flavor))
-      {
-        try
-        {
-          obj = contents.getTransferData(flavor);
-        }
-        catch (UnsupportedFlavorException exu) // Unlikely but we must catch it
-        {
-          console.warn("(Copy/paste) Unsupported flavor");
-          //~  exu.printStackTrace();
-        }
-        catch (java.io.IOException exi)
-        {
-          console.warn("(Copy/paste) Unavailable data: " + exi);
-          //~  exi.printStackTrace();
-        }
-      }
-      return obj;
-    } 
     
     // Returns true if successful, false if not
     public boolean copyString(String str) {
       String myString = str;
       try {
-        StringSelection stringSelection = new StringSelection(myString);
-        Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-        clipboard.setContents(stringSelection, null);
+        copyStringToClipboard(myString);
       }
       catch (RuntimeException e) {
         console.warn(e.getMessage());
@@ -6152,16 +6918,25 @@ class Engine {
     if (cacheInfoTimeout > 0) {
       cacheInfoTimeout--;
       if (cacheInfoTimeout == 0) {
-        if (cacheInfoJSON != null) {
-          console.info("processCaching: saving cache info.");
-          saveJSONObject(cacheInfoJSON, APPPATH+CACHE_INFO);
-        }
+        saveCacheInfoNow();
       }
     }
   }
+  
+  public void saveCacheInfoNow() {
+    if (cacheInfoJSON != null) {
+      console.info("processCaching: saving cache info.");
+      saveJSONObject(cacheInfoJSON, CACHE_PATH+CACHE_INFO);
+      cacheInfoTimeout = 0;
+      stats.increase("total_cache_info_saves", 1);
+    }
+  }
 
-  // Woops I should place this at the start.
-  boolean focusedMode = true;
+  
+  // TODO: Move requestScreen from Screen class to engine.
+  public void requestScreen(Screen screen) {
+    if (currScreen != null) currScreen.requestScreen(screen);
+  }
 
   // The core engine function which essentially runs EVERYTHING in Timeway.
   // All the screens, all the input management, and everything else.
@@ -6179,7 +6954,9 @@ class Engine {
     sound.processSound();
     processCaching();
 
-
+    if ((int)app.frameCount % 2000 == 0) {
+      stats.save();
+    }
 
     if (display != null) display.recordRendererTime();
     // This should be run at all times because apparently (for some stupid reason)
@@ -6197,6 +6974,10 @@ class Engine {
     display.displayScreens();
     
     ui.displayMiniMenu();
+    
+    if (display.showMemUsage) {
+      display.displayMemUsageBar();
+    }
     
     
     
@@ -6227,7 +7008,7 @@ class Engine {
 
     counter += display.getDelta();
     // Update times so we can calculate live fps.
-    display.updateDelta();
+    display.update();
     if (display.showCPUBenchmarks) display.showBenchmarks();
     
     if (display.showFPS()) {
@@ -6255,6 +7036,9 @@ class Engine {
     display.resetTimes();
     
     if (display != null) display.timeMode = display.IDLE_TIME;
+    
+    stats.recordTime("total_time_in_timeway");
+    stats.increase("total_frames_timeway", 1);
   }
   
 }
@@ -6277,18 +7061,20 @@ public abstract class Screen {
   protected final int START = 1;
   protected final int END = 2;
 
-  protected Engine engine;
-  protected Engine.Console console;
   protected PApplet app;
-  protected Engine.SharedResourcesModule sharedResources;
-  protected Engine.SettingsModule settings;
-  protected Engine.InputModule input;
-  protected Engine.DisplayModule display;
-  protected Engine.PowerModeModule power;
-  protected Engine.AudioModule sound;
-  protected Engine.FilemanagerModule file;
-  protected Engine.ClipboardModule clipboard;
-  protected Engine.UIModule ui;
+  protected TWEngine engine;
+  protected TWEngine.Console console;
+  protected TWEngine.SharedResourcesModule sharedResources;
+  protected TWEngine.SettingsModule settings;
+  protected TWEngine.InputModule input;
+  protected TWEngine.DisplayModule display;
+  protected TWEngine.PowerModeModule power;
+  protected TWEngine.AudioModule sound;
+  protected TWEngine.FilemanagerModule file;
+  protected TWEngine.StatsModule stats;
+  protected TWEngine.ClipboardModule clipboard;
+  protected TWEngine.UIModule ui;
+  protected TWEngine.PluginModule plugins;
   
   protected float screenx = 0;
   protected float screeny = 0;
@@ -6304,7 +7090,7 @@ public abstract class Screen {
   protected float WIDTH = 0.;
   protected float HEIGHT = 0.;
 
-  public Screen(Engine engine) {
+  public Screen(TWEngine engine) {
     this.engine = engine;
     this.console = engine.console;
     this.app = engine.app;
@@ -6318,6 +7104,8 @@ public abstract class Screen {
     this.sound = engine.sound;
     this.file = engine.file;
     this.clipboard = engine.clipboard;
+    this.stats = engine.stats;
+    this.plugins = engine.plugins;
     
     this.WIDTH = engine.display.WIDTH;
     this.HEIGHT = engine.display.HEIGHT;
@@ -6346,6 +7134,11 @@ public abstract class Screen {
     rect(0, myUpperBarWeight, WIDTH, HEIGHT-myUpperBarWeight-myLowerBarWeight);
     display.recordLogicTime();
   }
+  
+  // Run code here you want to run in the background during MINIMAL mode.
+  protected void runMinimal() {
+    
+  }
 
   public void startupAnimation() {
   }
@@ -6355,6 +7148,10 @@ public abstract class Screen {
     engine.transition = 1.0;
     engine.transitionDirection = RIGHT;   // Right by default, you can change it to left or anything else
     // right after calling startScreenTransition().
+  }
+  
+  protected boolean focused() {
+    return (engine.currScreen == this);
   }
 
   protected void endScreenAnimation() {
@@ -6415,7 +7212,6 @@ public abstract class Screen {
       app.translate(screenx, screeny);
       app.scale(display.getScale());
       this.backg();
-
       this.content();
       this.upperBar();
       this.lowerBar();
@@ -6424,10 +7220,38 @@ public abstract class Screen {
       
       app.popMatrix();
     }
+    else {
+      this.runMinimal();
+    }
   }
 }
 
 
+
+public class DImage {
+  public float width = 0;
+  public float height = 0;
+  public int mode = 0;
+  public PImage pimage;         // 1
+  public LargeImage largeImage; // 2
+  
+  private void setDimensions(float w, float h) {
+    this.width = w;
+    this.height = h;
+  }
+  
+  public DImage(PImage pimage) {
+    setDimensions(pimage.width, pimage.height);
+    this.pimage = pimage;
+    mode = 1;
+  }
+  public DImage(LargeImage largeImage, PImage p) {
+    setDimensions(largeImage.width, largeImage.height);
+    this.pimage = p;
+    this.largeImage = largeImage;
+    mode = 2;
+  }
+}
 
 
 
@@ -6439,14 +7263,1338 @@ public class LargeImage {
   public boolean inGPU = false;
   
   public LargeImage(IntBuffer texData) {
+    super();
     this.texData = texData;
   }
   
   public void finalize() {
-    // TODO: OpenGL function call to clear texture from gpu mem
-    
+    if (timewayEngine != null && timewayEngine.display != null) {
+      timewayEngine.display.destroyImage(this);
+    }
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//*********************Sprite Class****************************
+// Now yes, I am aware that the code is a mess and there are many
+// features inside of this class that go unused. This was ripped
+// straight from SketchiePad. This is mainly placeholder code as
+// to be able to have click+draggable objects.
+// Its functionalities:
+// 1. Create sprites simply by calling the sprite() method
+// 2. Click and drag objects
+// 3. Resize objects
+// 4. Save the position of objects between closing and starting again
+// 5. Move objects with code, but still allow the position to be updated when clicked+dragged.
+public final class SpriteSystemPlaceholder {
+        public HashMap<String, Integer> spriteNames;
+        public ArrayList<Sprite> sprites;
+        public Sprite selectedSprite;
+        public Stack<Sprite> spritesStack;
+        private int newSpriteX = 0, newSpriteY = 0, newSpriteZ = 0;
+        public Sprite unusedSprite;
+        public TWEngine engine;
+        public PApplet app;
+        public TWEngine.Console console;
+        public boolean keyPressAllowed = true;
+        public Click generalClick;
+        public Stack<Sprite> selectedSprites;
+        public String myPath;
+        public boolean interactable = true;
+        public boolean saveSpriteData = true;
+        public boolean showAllWireframes = false;
+        public boolean suppressSpriteWarning = false;
+        public boolean repositionSpritesToScale = true;
+        public boolean allowSelectOffContentPane = true;
+
+        public String PATH_SPRITES_ATTRIB;
+        public String APPPATH; 
+
+        public final int SINGLE = 1;
+        public final int DOUBLE = 2;
+        public final int VERTEX = 3;
+        public final int ROTATE = 4;   
+        
+        public float selectBorderTime = 0.;
+
+        // Use this constructor for no saving sprite data.
+        public SpriteSystemPlaceholder(TWEngine engine) {
+            this(engine, "");
+            saveSpriteData = false;
+        } 
+
+        // Default constructor.
+        public SpriteSystemPlaceholder(TWEngine engine, String path) {
+            this.engine = engine;
+            spriteNames = new HashMap<String, Integer>();
+            selectedSprites = new Stack<Sprite>(8192);
+            sprites = new ArrayList<Sprite>();
+            spritesStack = new Stack<Sprite>(128);
+            unusedSprite = new Sprite("UNUSED");
+            generalClick = new Click();
+            selectedSprite = null;
+            app = engine.app;
+            console = engine.console;
+            PATH_SPRITES_ATTRIB = engine.PATH_SPRITES_ATTRIB;
+            APPPATH = engine.APPPATH;
+            this.myPath = path;
+        }
+
+        
+        class Click {
+            private boolean dragging = false;
+            private int clickDelay = 0;
+            private boolean click = false;
+            private boolean draggingEnd = false;
+            
+            public boolean isDragging() {
+                return dragging;
+            }
+            
+            public void update() {
+                draggingEnd = false;
+                if (!mousePressed && dragging) {
+                dragging = false;
+                draggingEnd = true;
+                }
+                if (clickDelay > 0) {
+                clickDelay--;
+                }
+                if (!click && mousePressed) {
+                click = true;
+                clickDelay = 1;
+                }
+                if (click && !mousePressed) {
+                click = false;
+                }
+            }
+            
+            public boolean draggingEnded() {
+                return draggingEnd;
+            }
+            
+            public void beginDrag() {
+                if (mousePressed && clickDelay > 0) {
+                dragging = true;
+                }
+            }
+            
+            public boolean clicked() {
+                return (clickDelay > 0);
+            }
+            
+            
+        }
+        class QuadVertices {
+            public PVector v[] = new PVector[4];
+            
+            {
+            v[0] = new PVector(0,0);
+            v[1] = new PVector(0,0);
+            v[2] = new PVector(0,0);
+            v[3] = new PVector(0,0);
+            }
+            
+            public QuadVertices() {
+            
+            }
+            public QuadVertices(float xStart1,float yStart1,float xStart2,float yStart2,float xEnd1,float yEnd1,float xEnd2,float yEnd2) {
+            v[0].set(xStart1, yStart1);
+            v[1].set(xStart2, yStart2);
+            v[2].set(xEnd1,   yEnd1);
+            v[3].set(xEnd2,   yEnd2);
+            }
+        }
+        
+        // Added implements RedrawElement so that we can use sprite with ERS
+        class Sprite {
+
+            public String imgName = "";
+            public String name;
+            
+            public float xpos, ypos, zpos;
+            public int wi = 0, hi = 0;
+            
+            public QuadVertices vertex;
+ 
+            
+            public float defxpos, defypos, defzpos;
+            public int defwi = 0, defhi = 0;
+            public QuadVertices defvertex;
+            public float defrot = HALF_PI;
+            public float defradius = 100.; //radiusY = 50.;
+            
+            public float offxpos, offypos;
+            public int offwi = 0, offhi = 0;
+            public QuadVertices offvertex;
+            public float offrot = HALF_PI;
+            public float offradius = 100.; //radiusY = 50.;
+            
+            public int spriteOrder;
+            public boolean allowResizing = true;
+            
+            public float repositionDragStartX;
+            public float repositionDragStartY;
+            public QuadVertices repositionV;
+            public float aspect;
+            public Click resizeDrag;
+            public Click repositionDrag;
+            public Click select;
+            public int currentVertex = 0;
+            public boolean hoveringOverResizeSquare = false;
+            public boolean lock = false;
+            public int lastFrameShown = 0;
+            public float bop = 0.0;
+            public int mode = SINGLE;
+            public float rot = HALF_PI;
+            public float radius = 100.; //radiusY = 50.;
+            
+            public float BOX_SIZE = 50;
+            
+            
+            
+            //Scale modes:
+            //1 - pixel width height (int)
+            //2 - scale multiplier (float)
+
+            public Sprite(String name) {
+                xpos = 0;
+                ypos = 0;
+                this.name = name;
+                vertex = new QuadVertices();
+                offvertex = new QuadVertices();
+                defvertex = new QuadVertices();
+                repositionV = new QuadVertices();
+                resizeDrag     = new Click();
+                repositionDrag = new Click();
+                select         = new Click();
+            }
+            
+            public void setOrder(int order) {
+                this.spriteOrder = order;
+            }
+            
+            public int getOrder() {
+                return spriteOrder;
+            }
+
+            public float getBop() {
+                return bop;
+            }
+
+            public void bop() {
+                bop = 0.2;
+            }
+
+            public void bop(float b) {
+                bop = b;
+            }
+
+            public void resetBop() {
+                bop = 0.0;
+            }
+            
+            public String getModeString() {
+                switch (mode) {
+                case SINGLE: //SINGLE
+                return "SINGLE";
+                case DOUBLE: //DOUBLE
+                return "DOUBLE";
+                case VERTEX: //VERTEX
+                return "VERTEX";
+                case ROTATE: //ROTATE
+                return "ROTATE";
+                default:
+                return "SINGLE";
+                }
+            }
+            
+            public void setMode(int m) {
+                this.mode = m;
+            }
+            
+            public void setModeString(String m) {
+                if (m.equals("SINGLE")) {
+                mode = SINGLE;
+                }
+                else if (m.equals("DOUBLE")) {
+                mode = DOUBLE;
+                }
+                else if (m.equals("VERTEX")) {
+                mode = VERTEX;
+                }
+                else if (m.equals("ROTATE")) {
+                mode = ROTATE;
+                }
+                else {
+                mode = SINGLE;
+                }
+            }
+
+            public String getName() {
+                return this.name;
+            }
+
+            public void lock() {
+                lock = true;
+            }
+            public void unlock() {
+                lock = false;
+            }
+            public void poke(int f) {
+                //rot += 0.05;
+                bop *= 0.85;
+                lastFrameShown = f;
+            }
+            public boolean beingUsed(int f) {
+                return (f == lastFrameShown-1 || f == lastFrameShown || f == lastFrameShown+1);
+            }
+            public boolean isLocked() {
+                return lock;
+            }
+            public void setImg(String name) {
+                DImage im = engine.display.getImg(name);
+                if (im == null) {
+                  engine.console.warn("sprite setImg(): "+name+" doesn't exist");
+                  imgName = "white";
+                  return;
+                }
+                imgName = name;
+                if (wi == 0) { 
+                wi = (int)im.width;
+                defwi = wi;
+                }
+                if (hi == 0) {
+                hi = (int)im.height;
+                defhi = hi;
+                }
+                aspect = (im.height)/(im.width);
+            }
+
+            public void move(float x, float y) {
+                float oldX = xpos;
+                float oldY = ypos;
+                xpos = x;
+                ypos = y;
+                defxpos = x;
+                defypos = y;
+                
+                //Vertex position
+                for (int i = 0; i < 4; i++) {
+                vertex.v[i].add(x-oldX, y-oldY);
+                }
+            }
+            
+            public void offmove(float x, float y) {
+                float oldX = xpos;
+                float oldY = ypos;
+                offxpos = x;
+                offypos = y;
+                xpos = defxpos+x;
+                ypos = defypos+y;
+                
+                for (int i = 0; i < 4; i++) {
+                vertex.v[i].add(xpos-oldX, ypos-oldY);
+                }
+            }
+            
+            public void vertex(int v, float x, float y) {
+                vertex.v[v].set(x, y);
+                defvertex.v[v].set(x, y);
+            }
+            
+            public void offvertex(int v, float x, float y) {
+                offvertex.v[v].set(x, y);
+                vertex.v[v].set(defvertex.v[v].x+x, defvertex.v[v].y+y);
+            }
+
+            public void setX(float x) {
+                xpos = x;
+                defxpos = x;
+            }
+
+            public void setY(float y) {
+                ypos = y;
+                defypos = y;
+            }
+            
+            public void offsetX(float x) {
+                offxpos = x;
+                xpos = defxpos+x;
+            }
+
+            public void offsetY(float y) {
+                offypos = y;
+                ypos = defxpos+y;
+            }
+
+            public void setZ(float z) {
+                zpos = z;
+                defzpos = z;
+            }
+
+            public void setWidth(int w) {
+                this.wi = w;
+                defwi =   w;
+            }
+
+            public void setHeight(int h) {
+                this.hi = h;
+                defhi =   h;
+            }
+            
+            public void offsetWidth(int w) {
+                this.offwi = w;
+                this.wi = defwi+w;
+            }
+
+            public void offsetHeight(int h) {
+                this.offhi = h;
+                this.hi = defhi+h;
+            }
+
+            public float getX() {
+                return this.xpos;
+            }
+
+            public float getY() {
+                return this.ypos;
+            }
+
+            public float getZ() {
+                return this.zpos;
+            }
+
+            public int getWidth() {
+                return this.wi;
+            }
+
+            public int getHeight() {
+                return this.hi;
+            }
+            
+            
+            private boolean polyPoint(PVector[] vertices, float px, float py) {
+                boolean collision = false;
+            
+                // go through each of the vertices, plus
+                // the next vertex in the list
+                int next = 0;
+                for (int current=0; current<vertices.length; current++) {
+            
+                // get next vertex in list
+                // if we've hit the end, wrap around to 0
+                next = current+1;
+                if (next == vertices.length) next = 0;
+            
+                // get the PVectors at our current position
+                // this makes our if statement a little cleaner
+                PVector vc = vertices[current];    // c for "current"
+                PVector vn = vertices[next];       // n for "next"
+            
+                // compare position, flip 'collision' variable
+                // back and forth
+                if (((vc.y >= py && vn.y < py) || (vc.y < py && vn.y >= py)) &&
+                    (px < (vn.x-vc.x)*(py-vc.y) / (vn.y-vc.y)+vc.x)) {
+                        collision = !collision;
+                }
+                }
+                return collision;
+            }
+
+
+
+            public boolean mouseWithinSquare() {
+                switch (mode) {
+                case SINGLE: {
+                    float d = BOX_SIZE, x = (float)wi-d+xpos, y = (float)hi-d+ypos;
+                    if (engine.mouseX() > x && engine.mouseY() > y && engine.mouseX() < x+d && engine.mouseY() < y+d) {
+                      return true;
+                    }
+                }
+                break;
+                case DOUBLE: {
+                  // width square
+                    float d = BOX_SIZE, x1 = (float)wi-(d/2)+xpos, y1 = (float)(hi/2)-(d/2)+ypos;
+                  // height square
+                    float               x2 = (float)(wi/2)-(d/2)+xpos, y2 = (float)(hi)-(d/2)+ypos;
+                    if ((engine.mouseX() > x1 && engine.mouseY() > y1 && engine.mouseX() < x1+d && engine.mouseY() < y1+d)
+                    || (engine.mouseX() > x2 && engine.mouseY() > y2 && engine.mouseX() < x2+d && engine.mouseY() < y2+d)) {
+                      return true;
+                    }
+                }
+                break;
+                case VERTEX: {
+                    for (int i = 0; i < 4; i++) {
+                    float d = BOX_SIZE;
+                    float x = vertex.v[i].x;
+                    float y = vertex.v[i].y;
+                    if (engine.mouseX() > x-d/2 && engine.mouseY() > y-d/2 && engine.mouseX() < x+d/2 && engine.mouseY() < y+d/2) {
+                        return true;
+                    }
+                    }
+                }
+                break;
+                case ROTATE:
+                //float decx = float(mouseX)-cx;
+                //float decy = cy-float(mouseY);
+                //if (decy < 0) {
+                //  rot = atan(-decx/decy);
+                //}
+                //else {
+                //  rot = atan(-decx/decy)+PI;
+                //}
+                float cx = xpos+wi/2, cy = ypos+hi/2;
+                float d = BOX_SIZE;
+                float x = cx+sin(rot)*radius,  y = cy+cos(rot)*radius;
+                
+                if (engine.mouseX() > x-d/2 && engine.mouseY() > y-d/2 && engine.mouseX() < x+d/2 && engine.mouseY() < y+d/2) {
+                    return true;
+                }
+                break;
+                default: {
+                    d = BOX_SIZE;
+                    x = (float)wi-d+xpos;
+                    y = (float)hi-d+ypos;
+                    if (engine.mouseX() > x && engine.mouseY() > y && engine.mouseX() < x+d && engine.mouseY() < y+d) {
+                    return true;
+                    }
+                }
+                break;
+                }
+                return false;
+            }
+            
+            public float getRot() {
+                return this.rot;
+            }
+            
+            public void setRot(float r) {
+                this.rot = r;
+            }
+            
+            // hooo now that is some very incomplete code.
+            // Don't use it, it doesn't work.
+            public boolean rotateCollision() {
+                float r = HALF_PI/2 + rot;
+                float xr = radius;
+                float yr = radius;
+                float xd = xpos+float(wi)/2;
+                float yd = ypos+float(hi)/2;
+                float f = 0;
+                if (wi > hi) {
+                f = 1-(float(hi)/float(wi));
+                }
+                else if (hi > wi) {
+                f = 1-(float(wi)/float(hi));
+                }
+                else {
+                f = 0;
+                }
+                
+                float x = sin(r+f)*xr + xd;
+                float y = cos(r+f)*yr + yd;
+                vertex.v[0].x = x;
+                vertex.v[0].y = y;
+                x = sin(r-f+HALF_PI)*xr + xd;
+                y = cos(r-f+HALF_PI)*yr + yd;
+                vertex.v[1].x = x;
+                vertex.v[1].y = y;
+                x = sin(r+f+PI)*xr + xd;
+                y = cos(r+f+PI)*yr + yd;
+                vertex.v[2].x = x;
+                vertex.v[2].y = y;
+                x = sin(r-f+HALF_PI+PI)*xr + xd;
+                y = cos(r-f+HALF_PI+PI)*yr + yd;
+                vertex.v[3].x = x;
+                vertex.v[3].y = y;
+                x = sin(r+f)*xr + xd;
+                y = cos(r+f)*yr + yd;
+                vertex.v[0].x = x;
+                vertex.v[0].y = y;
+                
+                return polyPoint(vertex.v, engine.mouseX(), engine.mouseY());
+            }
+            
+            
+            public boolean mouseWithinSprite() {
+                switch (mode) {
+                case SINGLE: {
+                    float x = xpos, y = ypos;
+                    return (engine.mouseX() > x && engine.mouseY() > y && engine.mouseX() < x+wi && engine.mouseY() < y+hi);
+                    //return (mouseX > x && mouseY > y && mouseX < x+wi && mouseY < y+hi && !repositionDrag.isDragging());
+                }
+                case DOUBLE: {
+                    float x = xpos, y = ypos;
+                    return (engine.mouseX() > x && engine.mouseY() > y && engine.mouseX() < x+wi && engine.mouseY() < y+hi);
+                }
+                case VERTEX:
+                    return polyPoint(vertex.v, engine.mouseX(), engine.mouseY());
+                case ROTATE: {
+                    return rotateCollision();
+                }
+                    
+                }
+                return false;
+            }
+            
+            public boolean mouseWithinHitbox() {
+              return mouseWithinSprite() || mouseWithinSquare();
+            }
+
+            public boolean clickedOn() {
+                return (mouseWithinHitbox() && repositionDrag.clicked());
+            }
+            
+            public boolean isSelected() {
+              return this.equals(selectedSprite);
+            }
+            
+            // The sprite class ripped from Sketchiepad likes to sh*t out
+            // json files whenever it's moved or anything. We don't want any
+            // text placeable elements to do that. If a path wasn't provided
+            // in the constructor we do NOT update the sprite data.
+            public void updateJSON() {
+                if (saveSpriteData) {
+                    JSONObject attributes = new JSONObject();
+                    
+                    attributes.setString("name", name);
+                    attributes.setString("mode", getModeString());
+                    attributes.setBoolean("locked", this.isLocked());
+                    attributes.setInt("x", (int)this.defxpos);
+                    attributes.setInt("y", (int)this.defypos);
+                    attributes.setInt("w", (int)this.defwi);
+                    attributes.setInt("h", (int)this.defhi);
+                    
+                    for (int i = 0; i < 4; i++) {
+                        attributes.setInt("vx"+str(i), (int)defvertex.v[i].x);
+                        attributes.setInt("vy"+str(i), (int)defvertex.v[i].y);
+                    }
+                    
+                    //resetDefaults();
+                    
+                    app.saveJSONObject(attributes, myPath+name+".json");
+                }
+                engine.stats.increase("sprites_moved", 1);
+            }
+            
+            public boolean isDragging() {
+                return resizeDrag.isDragging() || repositionDrag.isDragging();
+            }
+
+            public void dragReposition() {
+                boolean dragging = mouseWithinSprite();
+                
+                // Bug fix where small area is non-selectable.
+                if (allowResizing) {
+                  dragging &= !mouseWithinSquare();
+                }
+                
+                if (mode == VERTEX) {
+                //dragging = mouseWithinSprite();
+                }
+                if (dragging && !repositionDrag.isDragging()) {
+                repositionDrag.beginDrag();
+                
+                //X and Y position
+                repositionDragStartX = this.xpos-engine.mouseX();
+                repositionDragStartY = this.ypos-engine.mouseY();
+                
+                //Vertex position
+                for (int i = 0; i < 4; i++) {
+                    repositionV.v[i].set(vertex.v[i].x-engine.mouseX(), vertex.v[i].y-engine.mouseY());
+                }
+                }
+                if (repositionDrag.isDragging()) {
+                //X and y position
+                this.xpos = repositionDragStartX+engine.mouseX();
+                this.ypos = repositionDragStartY+engine.mouseY();
+                
+                defxpos = xpos-offxpos;
+                defypos = ypos-offypos;
+                
+                //Vertex position
+                for (int i = 0; i < 4; i++) {
+                    vertex.v[i].set(repositionV.v[i].x+engine.mouseX(), repositionV.v[i].y+engine.mouseY());
+                    defvertex.v[i].set(vertex.v[i].x-offvertex.v[i].x, vertex.v[i].y-offvertex.v[i].y);
+                }
+                }
+                if (repositionDrag.draggingEnded()) {
+                    updateJSON();
+                }
+
+                repositionDrag.update();
+            }
+
+            public boolean hoveringOverResizeSquare() {
+                return this.hoveringOverResizeSquare;
+            }
+
+            public boolean hoveringVertex(float px, float py) {
+                boolean collision = false;
+                int next = 0;
+                for (int current=0; current<vertex.v.length; current++) {
+
+                // get next vertex in list
+                // if we've hit the end, wrap around to 0
+                next = current+1;
+                if (next == vertex.v.length) next = 0;
+
+                PVector vc = vertex.v[current];    // c for "current"
+                PVector vn = vertex.v[next];       // n for "next"
+
+                if ( ((vc.y > py) != (vn.y > py)) && (px < (vn.x-vc.x) * (py-vc.y) / (vn.y-vc.y) + vc.x) ) {
+                    collision = !collision;
+                }
+                }
+
+                return false;
+            }
+
+            public void resizeSquare() {
+                switch (mode) {
+                case SINGLE: {
+                    float d = BOX_SIZE, x = (float)wi-d+xpos, y = (float)hi-d+ypos;
+                    resizeDrag.update();
+                    this.square(x,y, d);
+                    if (engine.mouseX() > x && engine.mouseY() > y && engine.mouseX() < x+d && engine.mouseY() < y+d) {
+                    resizeDrag.beginDrag();
+                    this.hoveringOverResizeSquare = true;
+                    } else {
+                    this.hoveringOverResizeSquare = false;
+                    }
+                    if (resizeDrag.isDragging()) {
+                    wi = int((engine.mouseX()+d/2-xpos));
+                    hi = int((engine.mouseX()+d/2-xpos)*aspect);
+                    
+                    defwi = wi-offwi;
+                    defhi = hi-offhi;
+                    }
+                    if (resizeDrag.draggingEnded()) {
+                    updateJSON();
+                    }
+                }
+                break;
+                    
+                    
+                case DOUBLE: {
+                  // width square
+                    float d = BOX_SIZE, x1 = (float)wi-(d/2)+xpos, y1 = (float)(hi/2)-(d/2)+ypos;
+                  // height square
+                    float               x2 = (float)(wi/2)-(d/2)+xpos, y2 = (float)(hi)-(d/2)+ypos;
+                    resizeDrag.update();
+                    this.square(x1, y1, d);
+                    this.square(x2, y2, d);
+                    if (engine.mouseX() > x1 && engine.mouseY() > y1 && engine.mouseX() < x1+d && engine.mouseY() < y1+d) {
+                      resizeDrag.beginDrag();
+                      // whatever we're using currentVertex
+                      currentVertex = 1;
+                      this.hoveringOverResizeSquare = true;
+                    } else if (engine.mouseX() > x2 && engine.mouseY() > y2 && engine.mouseX() < x2+d && engine.mouseY() < y2+d) {
+                      resizeDrag.beginDrag();
+                      // whatever we're using currentVertex
+                      currentVertex = 2;
+                      this.hoveringOverResizeSquare = true;
+                    }
+                    else {
+                      this.hoveringOverResizeSquare = false;
+                    }
+                    
+                    
+                    if (resizeDrag.isDragging()) {
+                      if (currentVertex == 1) {
+                        wi = int((engine.mouseX()+d/2-xpos));
+                      }
+                      else if (currentVertex == 2) {
+                        hi = int((engine.mouseY()+d/2-ypos));
+                      }
+                      
+                      defwi = wi-offwi;
+                      defhi = hi-offhi;
+                    }
+                    
+                    if (resizeDrag.draggingEnded()) {
+                      updateJSON();
+                    }
+                }
+                break;
+                
+                case VERTEX: {
+                    resizeDrag.update();
+                    for (int i = 0; i < 4; i++) {
+                      float d = BOX_SIZE;
+                      float x = vertex.v[i].x;
+                      float y = vertex.v[i].y;
+                      this.square(x-d/2, y-d/2, d);
+                      
+                      if (engine.mouseX() > x-d/2 && engine.mouseY() > y-d/2 && engine.mouseX() < x+d/2 && engine.mouseY() < y+d/2) {
+                          resizeDrag.beginDrag();
+                          currentVertex = i;
+                          this.hoveringOverResizeSquare = true;
+                      } else {
+                          this.hoveringOverResizeSquare = false;
+                      }
+                      if (resizeDrag.isDragging() && currentVertex == i) {
+                          vertex.v[i].x = engine.mouseX();
+                          vertex.v[i].y = engine.mouseY();
+                          defvertex.v[i].set(vertex.v[i].x-offvertex.v[i].x, vertex.v[i].y-offvertex.v[i].y);
+                      }
+                    }
+                    if (resizeDrag.draggingEnded()) {
+                    updateJSON();
+                    }
+                }
+                break;
+                
+                
+                case ROTATE: {
+                    resizeDrag.update();
+                    float cx = xpos+wi/2, cy = ypos+hi/2;
+                    float d = BOX_SIZE;
+                    float x = cx+sin(rot)*radius,  y = cy+cos(rot)*radius;
+                    
+                    this.square(x-d/2, y-d/2, d);
+                    
+                    if (engine.mouseX() > x-d/2 && engine.mouseY() > y-d/2 && engine.mouseX() < x+d/2 && engine.mouseY() < y+d/2) {
+                    resizeDrag.beginDrag();
+                    this.hoveringOverResizeSquare = true;
+                    } else {
+                    this.hoveringOverResizeSquare = false;
+                    }
+                    
+                    if (resizeDrag.isDragging()) {
+                    float decx = (engine.mouseX())-cx;
+                    float decy = cy-(engine.mouseY());
+                    if (decy < 0) {
+                        rot = atan(-decx/decy);
+                    }
+                    else {
+                        rot = atan(-decx/decy)+PI;
+                    }
+                    
+                    //float a = float(wi)/float(hi);
+                    float s = sin(rot);//, c = a*-cos(rot);
+                    if (s != 0.0) {
+                        radius = decx/s;
+                    }
+                    
+                    
+                    }
+                }
+                break;
+                    
+                }
+            }
+            
+            public void setRadius(float x) {
+                radius = x;
+            }
+            
+            public float getRadius() {
+                return radius;
+            }
+            
+            public void createVertices() {
+                vertex.v[0].set(xpos, ypos);
+                vertex.v[1].set(xpos+wi, ypos);
+                vertex.v[2].set(xpos+wi, ypos+hi);
+                vertex.v[3].set(xpos, ypos+hi);
+                
+                defvertex.v[0].set(xpos, ypos);
+                defvertex.v[1].set(xpos+wi, ypos);
+                defvertex.v[2].set(xpos+wi, ypos+hi);
+                defvertex.v[3].set(xpos, ypos+hi);
+            }
+
+            private void square(float x, float y, float d) {
+                noStroke();
+                app.fill(sin(selectBorderTime += 0.1*engine.display.getDelta())*50+200, 100);
+                app.rect(x, y, d, d);
+            }
+        }
+        
+        // New method added.
+        // This is called at the start of screens so that things like GUI's can
+        // be repositioned if there's different scaling.
+        // Only does it on the x axis for now.
+        public void repositionSpritesToScale() {
+          repositionSpritesToScale = true;
+        }
+
+        private int totalSprites = 0;
+        
+        public Sprite getSprite(String name) {
+            try {
+            return sprites.get(spriteNames.get(name));
+            }
+            catch (NullPointerException e) {
+                //if (!suppressSpriteWarning)
+                //    console.bugWarn("Sprite "+name+" does not exist.");
+                return unusedSprite;
+            }
+        }
+  
+        // What a confusing method name lol
+        // We don't want to load or save from json for sprites like
+        // placeables.
+        public void updateSpriteFromJSON(Sprite s) throws NullPointerException {
+            if (saveSpriteData) {
+                JSONObject att = loadJSONObject(myPath+s.getName()+".json");
+                s.move(att.getInt("x"), att.getInt("y"));
+                s.setWidth(att.getInt("w"));
+                s.setHeight(att.getInt("h"));
+                
+                s.setModeString(att.getString("mode"));
+                if (att.getBoolean("locked")) {
+                    s.lock();
+                }
+                
+                for (int i = 0; i < 4; i++) {
+                    s.vertex.v[i].set(att.getInt("vx"+str(i)), att.getInt("vy"+str(i)));
+                    s.defvertex.v[i].set(att.getInt("vx"+str(i)), att.getInt("vy"+str(i)));
+                }
+            }
+        }
+        public void addSprite(String identifier, String img) {
+            Sprite newSprite = new Sprite(identifier);
+            newSprite.setImg(img);
+            newSprite.setOrder(++totalSprites);
+            addSprite(identifier, newSprite);
+            try {
+            updateSpriteFromJSON(newSprite);
+            }
+            catch (NullPointerException e) {
+            newSprite.move(newSpriteX, newSpriteY);
+            newSprite.setZ(newSpriteZ);
+            newSpriteX += 20;
+            newSpriteY += 20;
+            newSpriteZ += 20;
+            newSprite.createVertices();
+            }
+            
+            // Added part: automatically offset if we need to reposition by scale.
+            // TODO: This code has been disabled because it is buggy. It needs to be fixed.
+            //if (repositionSpritesToScale) {
+            //  if (engine.displayScale*0.5 >= 1.) newSprite.offsetX((newSprite.getX()/(engine.displayScale*0.5))-newSprite.getX());
+            //  else newSprite.offsetX(newSprite.getX()-(newSprite.getX()/sqrt(engine.displayScale*2)));
+            //}
+        }
+        private void addSprite(String name, Sprite sprite) {
+            sprites.add(sprite);
+            spriteNames.put(name, sprites.size()-1);
+        }
+        
+        public Sprite spriteWithName(String name) {
+            return sprites.get(spriteNames.get(name));
+        }
+        public void newSprite(String name) {
+            Sprite sprite = new Sprite(name);
+            this.addSprite(name, sprite);
+        }
+        public void newSprite(String name, String img) {
+            Sprite sprite = new Sprite(name);
+            sprite.setImg(img);
+            this.addSprite(name, sprite);
+        }
+        public void newSprite(String name, String img, float x, float y) {
+            Sprite sprite = new Sprite(name);
+            sprite.setImg(img);
+            sprite.move(x,y);
+            this.addSprite(name, sprite);
+        }
+        public void newSprite(String name, String img, float x, float y, int w, int h) {
+            Sprite sprite = new Sprite(name);
+            sprite.setImg(img);
+            sprite.move(x,y);
+            sprite.setWidth(w);
+            sprite.setHeight(h);
+            this.addSprite(name, sprite);
+        }
+
+        public boolean spriteExists(String identifier) {
+            return (spriteNames.get(identifier) != null);
+        }
+
+        public void emptySpriteStack() {
+            spritesStack.empty();
+        }
+
+        private void renderSprite(Sprite s) {
+            if (s.isSelected() || (showAllWireframes && keyPressAllowed)) {
+                engine.wireframe = true;
+                if (engine.input.ctrlDown && engine.input.altDown && engine.input.shiftDown) {
+                  if (engine.input.keyDownOnce('d')) {
+                    s.mode = DOUBLE;
+                    engine.console.log("Sprite mode set to DOUBLE");
+                  }
+                  else if (engine.input.keyDownOnce('s')) {
+                    s.mode = SINGLE;
+                    engine.console.log("Sprite mode set to SINGLE");
+                  }
+                }
+            }
+            //draw.autoImg(s.getImg(), s.getX(), s.getY()+s.getHeight()*s.getBop(), s.getWidth(), s.getHeight()-int((float)s.getHeight()*s.getBop()));
+            
+            // Bug fix (hopefully)
+            fill(255);
+            switch (s.mode) {
+              case SINGLE:
+              engine.display.img(s.imgName, s.getX(), s.getY()+s.getHeight()*s.getBop(), s.getWidth(), s.getHeight()-int((float)s.getHeight()*s.getBop()));
+              break;
+              case DOUBLE:
+              engine.display.img(s.imgName, s.getX(), s.getY()+s.getHeight()*s.getBop(), s.getWidth(), s.getHeight()-int((float)s.getHeight()*s.getBop()));
+              break;
+              case VERTEX:  // We don't need vertices in our program so let's just sweep this under the rug.
+              //draw.autoImgVertex(s);
+              break;
+              case ROTATE:
+              //draw.autoImgRotate(s);
+              break;
+            }
+            
+            if (s.isSelected()) {
+              if (!s.isLocked()) {
+                  if (s.allowResizing) {
+                      s.resizeSquare();
+                  }
+                  s.dragReposition();
+              }
+            }
+            
+            engine.wireframe = false;
+            s.poke(app.frameCount);
+        }
+
+        public void renderSprites() {
+            for (Sprite s : sprites) {
+                renderSprite(s);
+            }
+        }
+        
+        public void renderSprite(String name, String img) {
+            Sprite s = getSprite(name);
+            s.setImg(img);
+            renderSprite(s);
+        }
+        
+        public void renderSprite(String name) {
+            Sprite s = sprites.get(spriteNames.get(name));
+            renderSprite(s);
+        }
+
+        public void guiElement(String identifier, String image) {
+            //float ratioX = app.width/float(app.displayWidth);
+            //println("ratioX: " + ratioX);
+            //getSprite(identifier).offmove((float(app.displayWidth)*ratioX), 0.);
+            this.sprite(identifier, image);
+        }
+
+        public void guiElement(String nameAndID) {
+            this.guiElement(nameAndID, nameAndID);
+        }
+
+        public void button(String identifier, String image, String text) {
+            this.guiElement(identifier, image);
+            if (text.length() > 0) {
+                app.textFont(engine.DEFAULT_FONT, 18);
+                // app.fill(255);
+                app.textAlign(CENTER, TOP);
+                float x = getSprite(identifier).getX() + getSprite(identifier).getWidth()/2;
+                float y = getSprite(identifier).getY() + getSprite(identifier).getHeight() + 5;
+                engine.display.recordRendererTime();
+                app.text(text, x, y);
+                engine.display.recordLogicTime();
+            }
+        }
+
+        public void button(String nameAndID, String text) {
+            this.button(nameAndID, nameAndID, text);
+        }
+
+        public void button(String nameAndID) {
+            this.button(nameAndID, nameAndID);
+        }
+
+
+        // TODO: move the button code to the engine later.
+        // Anything that needs to be consistant between screens
+        // should be in the engine class anyways.
+        public boolean buttonClicked(String identifier) {
+            Sprite s = getSprite(identifier);
+            return (s.mouseWithinHitbox() && engine.input.primaryClick);
+        }
+
+        public boolean buttonHover(String identifier) {
+            Sprite s = getSprite(identifier);
+            return s.mouseWithinHitbox();
+        }
+        
+        public void spriteVary(String nameAndID) {
+          if (engine.display.phoneMode) {
+            this.sprite(nameAndID+"-phone", nameAndID);
+          }
+          else {
+            this.sprite(nameAndID, nameAndID);
+          }
+        }
+
+        public void spriteVary(String identifier, String image) {
+          if (engine.display.phoneMode) {
+            this.sprite(identifier+"-phone", image);
+          }
+          else {
+            this.sprite(identifier, image);
+          }
+        }
+
+        public void sprite(String nameAndID) {
+            this.sprite(nameAndID, nameAndID);
+        }
+
+        public void sprite(String identifier, String image) {
+            if (!spriteExists(identifier)) {
+                addSprite(identifier, image);
+            }
+            Sprite s = getSprite(identifier);
+            s.setImg(image);
+            try { spritesStack.push(s); }
+            catch (StackException e) { 
+              this.engine.console.bugWarnOnce("Sprite stack is full, did you forget to call updateSpriteSystem()?"); 
+            }
+            renderSprite(s);
+        }
+
+        // Same as sprite, except since the code is so botched,
+        // here's some more botch'd code with hackDimensions
+        // where we DON'T render the sprite.
+        public void placeable(String identifier) {
+            if (!spriteExists(identifier)) addSprite(identifier, "nothing");
+            Sprite s = getSprite(identifier);
+            placeable(s);
+        }
+
+        public void placeable(Sprite s) {
+            s.imgName = "nothing";
+            spritesStack.push(s);
+            renderSprite(s);
+        }
+
+        public void hackSpriteDimensions(Sprite s, int w, int h) {
+            s.wi = w;
+            s.hi = h;
+            s.aspect = float(h)/float(w);
+        }
+
+        public void hackSpriteDimensions(String identifier, int w, int h) {
+            Sprite s = getSprite(identifier);
+            hackSpriteDimensions(s, w, h);
+        }
+        
+        private void runSpriteInteraction() {
+            
+            // Replace true with false to disable sprite interaction.
+          
+            if (!interactable) return;
+              
+            if (selectedSprite != null) {
+                if (!selectedSprite.beingUsed(app.frameCount)) {
+                selectedSprite = null;
+                }
+            }
+            
+            boolean hoveringOverAtLeast1Sprite = false;
+            boolean clickedSprite = false;
+            
+            
+            for (int i = 0; i < spritesStack.size(); i++) {
+                Sprite s = spritesStack.peek(i);
+                if (s.isSelected()) {
+                  if (s.mouseWithinHitbox()) {
+                      hoveringOverAtLeast1Sprite = true;
+                  }
+                }
+                else if (s.mouseWithinHitbox()) {
+                hoveringOverAtLeast1Sprite = true;
+                if (generalClick.clicked()) {
+                    selectedSprites.push(s);
+                    clickedSprite = true;
+                }
+                }
+            }
+            
+            
+            // Don't bother with selecting logic if it's outside of the clicking content zone.
+            if (!allowSelectOffContentPane) {
+              float mousey = engine.input.mouseY();
+              float upper = engine.currScreen.myUpperBarWeight;
+              float lower = engine.display.HEIGHT-engine.currScreen.myLowerBarWeight;
+              // If mouse is within upperbar or lowerbar zone, don't bother
+              // checking for selecting sprites.
+              if (mousey < upper || mousey > lower) return;
+            }
+            
+            
+            //Sort through the sprites and select the front-most sprite (sprite with the biggest zpos)
+            if (clickedSprite && selectedSprites.size() > 0) {
+                boolean performSearch = true;
+                if (selectedSprite != null) {
+                  if (selectedSprite.mouseWithinHitbox()) {
+                      performSearch = false;
+                  }
+                  
+                  if (selectedSprite.isDragging()) {
+                      performSearch = false;
+                  }
+                }
+                
+                if (performSearch) {
+                  int highest = selectedSprites.top().getOrder();
+                  Sprite highestSelected = selectedSprites.top();
+                  for (int i = 0; i < selectedSprites.size(); i++) {
+                      Sprite s = selectedSprites.peek(i);
+                      if (s.getOrder() > highest) {
+                          highest = s.getOrder();
+                          highestSelected = s;
+                      }
+                  }
+                  selectedSprite = highestSelected;
+                  selectedSprites.empty();
+                }
+            }
+            
+            if (!hoveringOverAtLeast1Sprite && generalClick.clicked()) {
+                selectedSprite = null;
+            }
+        }
+        
+        //idk man. I'm not in the mood to name things today lol.
+        public void keyboardInteractionEnabler() {
+          if (engine.input.ctrlDown && engine.input.altDown && engine.input.shiftDown) {
+            if (engine.input.secondaryClick) {
+              if (!this.interactable) {
+                this.interactable = true;
+                engine.console.log("Sprite system interactability enabled.");
+              }
+              else {
+                this.interactable = false;
+                engine.console.log("Sprite system interactability disabled.");
+              }
+            }
+          }
+        }
+
+        public void updateSpriteSystem() {
+            this.keyboardInteractionEnabler();
+            this.generalClick.update();
+            this.runSpriteInteraction();
+            this.emptySpriteStack();
+        }
+
+    }
+    
+
+
+    
+
+    //*******************************************
+    //****************Stack class****************
+    class StackException extends RuntimeException{    
+        public StackException(String err) {
+            super(err);
+        }
+    }
+
+    public class Stack<T> implements Iterable<T> {
+      private Object[] S;
+      private int top;
+      private int capacity;
+      
+      public Stack(int size){
+          capacity = size;
+          S = new Object[size];
+          top = -1;
+      }
+  
+      public Stack(){
+          this(100);
+      }
+      
+      public T peek() {
+          if(isEmpty())
+          throw new StackException("stack is empty");
+          return (T)S[top];
+      }
+      
+      public T peek(int indexFromTop) {
+          //Accessing negative indexes should be impossible.
+          if(top-indexFromTop < 0)
+          throw new StackException("stack is empty");
+          return (T)S[top-indexFromTop];
+      }
+      
+      public boolean isEmpty(){
+          return top < 0;
+      }
+      
+      public int size(){
+          return top+1; 
+      }
+      
+      public void empty() {
+          top = -1;
+      }
+  
+      public void push(T e){
+          if(size() == capacity)
+          throw new StackException("stack is full");
+          S[++top] = e;
+      }
+      
+      public T pop() throws StackException{
+          if(isEmpty())
+          throw new StackException("stack is empty");
+          // this type cast is safe because we type checked the push method
+          return (T) S[top--];
+      }
+      
+      public T top() throws StackException{
+          if(isEmpty())
+          throw new StackException("stack is empty");
+          // this type cast is safe because we type checked the push method
+          return (T) S[top];
+      }
+      
+      public Iterator<T> iterator() {
+        return (Iterator<T>)Arrays.asList(S).iterator();
+      }
+    
+    }
+
+
+
+
+
+
+
+
 
 
 

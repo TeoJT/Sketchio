@@ -1,20 +1,70 @@
-import javax.swing.JOptionPane;
-import processing.sound.*;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.io.PrintWriter;
-import com.jogamp.newt.opengl.GLWindow;
-
 
 /**
-*********** Timeway ************
-* Explore your system files in a
-* 3D retro world and create notes
-* in a Onenote-like editor.
+*********************************** Timeway ***********************************
+*                      Your computer is your universe.
+* 
+* Visit https://teojt.github.io/timeway.html for more info on Timeway.
+* 
+* Here's the basics of Timeway's code:
+* Timeway is split into "screens", which you can think of as mini-apps.
+* The most significant of them all is the Pixel Realm (where all the 3d file 
+* stuff is). There is also the Editor, and other miscellaneous screens in
+* otherscreens.pde. 
+* 
+* Screens have their own states and variables which are cleared when the screen is
+* no longer in use. All screens use Timeway's engine, which stores the entire 
+* application's state and provides shared functions for all screens to access 
+* (e.g. file management, sounds, displaying).
+* 
+* 
+* Here's a quick rundown of what the other .pde files contain:
+*
+* messy.pde: Contains messy imported code from Sketchiepad that includes the sprite
+* system (used for UI and draggable text and images in the editor).
+*
+* pixelrealm_ui: Simply adds UI functionality to the base PixelRealm class since
+* having it all in one class would make it bloated and extremely difficult to 
+* maintain.
+*
+* screen_startup: Screen that shows the Timeway logo and loading screen and does a 
+* few startup stuff.
+*
+* zAndroid and zDesktop: Timeway is designed to work on both Desktop and Android using
+* the same codebase. However, there are obviously some big differences between the two,
+* and libraries that exist in Android mode simply don't exist for Java (desktop) mode
+* and vice verca.
+* The solution? Have two scripts for each version.
+* When you switch to Android mode, uncomment all the code in zAndroid and comment zDeskstop.
+* When you switch to Java mode, uncomment all the code in zDesktop and comment zAndroid.
+* Probably the worst system ever, but we like to keep it simple instead of spending ages
+* looking for another solution.
+*
+* Anyways, I have no idea who's reading this or who would delve into the code of Timeway,
+* but if you're here reading this, then have fun!
+*
+*
+*
+* 
 **/
 
-Engine timewayEngine;
+
+
+
+
+
+
+
+
+
+
+
+
+
+TWEngine timewayEngine;
 boolean sketch_showCrashScreen = false;
 String sketch_ERR_LOG_PATH;
 
@@ -22,55 +72,44 @@ String sketch_ERR_LOG_PATH;
 // rather than throw the error to processing (can be useful if you need more
 // error info)
 final boolean sketch_FORCE_CRASH_SCREEN = false;
+final boolean sketch_MAXIMISE = true;
 
 void settings() {
   try {
     // TODO... we're disabling graphics acceleration?!
-    if (platform == LINUX)
+    if (isLinux())
       System.setProperty("jogl.disable.openglcore", "true");
     size(displayWidth, displayHeight, P2D);
+    //size(900, 1800, P2D);
     //size(750, 1200, P2D);
     smooth(1);
     
     
     // Ugly, I know. But we're at the lowest level point in the program, so ain't
     // much we can do.
-    PJOGL.setIcon("data/engine/img/icon.png");
+    final String iconLocation = "data/engine/img/icon.png";
+    File f = new File(sketchPath()+"/"+iconLocation);
+    if (f.exists()) {
+      setDesktopIcon(iconLocation);
+    }
+    
+    Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
+        public void run() {
+            shutdown();
+        }
+    }, "Shutdown-thread"));
+    
   }
   catch (Exception e) {
-    JOptionPane.showMessageDialog(null,"A fatal error has occurred: \n"+e.getMessage()+"\n"+e.getStackTrace(),"Timeway",1);
+    minimalErrorDialog("A fatal error has occurred: \n"+e.getMessage()+"\n"+e.getStackTrace());
   }
 }
 
-@Override
-protected PSurface initSurface() {
-    PSurface s = super.initSurface();
-    
-    // Windows is annoying with maximised screens
-    // So let's do this hack to make the screen maximised.
-    boolean maximise = true;
-    
-    if (maximise) {
-      if (platform == WINDOWS) {
-        try {
-          // Set maximised.
-          Object o = surface.getNative();
-          if (o instanceof GLWindow) {
-            GLWindow window = (GLWindow)o;
-            window.setMaximized(true, true);
-          }
-        }
-        catch (Exception e) {
-          sketch_openErrorLog(
-              "Maximise error. This is a bug."
-              );
-        }
-      }
-    }
-    s.setTitle("Timeway");
-    s.setResizable(true);
-    return s;
+void shutdown() {
+  timewayEngine.stats.save();
+  timewayEngine.stats.set("last_closed", (int)(System.currentTimeMillis() / 1000L));
 }
+
 
 void sketch_openErrorLog(String mssg) {
   
@@ -79,19 +118,10 @@ void sketch_openErrorLog(String mssg) {
     FileWriter myWriter = new FileWriter(sketch_ERR_LOG_PATH);
     myWriter.write(mssg);
     myWriter.close();
+    println(mssg);
   } catch (IOException e2) {}
   
-  
-  if (Desktop.isDesktopSupported()) {
-    // Open desktop app with this snippet of code that I stole.
-    try {
-      Desktop desktop = Desktop.getDesktop();
-      File myFile = new File(sketch_ERR_LOG_PATH);
-      desktop.open(myFile);
-    } 
-    catch (IOException ex) {
-    }
-  }
+  openErrorLog();
 }
 
 void sketch_openErrorLog(Exception e) {
@@ -101,8 +131,8 @@ void sketch_openErrorLog(Exception e) {
   String sStackTrace = sw.toString();
   
   String errMsg = 
-  "Sorry! Timeway crashed :(\n"+
-  "Please provide Neo_2222 with this error log, thanks <3\n\n\n"+
+  "Sorry! "+TWEngine.APP_NAME+" crashed :(\n"+
+  "Please provide Teo Taylor with this error log, thanks <3\n\n\n"+
   e.getClass().toString()+"\nMessage: \""+
   e.getMessage()+"\"\nStack trace:\n"+
   sStackTrace;
@@ -114,37 +144,39 @@ void sketch_openErrorLog(Exception e) {
 // This is all the code you need to set up and start running
 // the timeway engine.
 void setup() {
-    
     hint(DISABLE_OPENGL_ERRORS);
     background(0);
+    
+    if (isAndroid()) {
+      //orientation(LANDSCAPE);    
+    }
     
     // Are we running in Processing or as an exported application?
     File f1 = new File(sketchPath()+"/lib");
     sketch_showCrashScreen = f1.exists();
     println("ShowcrashScreen: ", sketch_showCrashScreen);
     sketch_ERR_LOG_PATH = sketchPath()+"/data/error_log.txt";
-    timewayEngine = new Engine(this);
+    
+    timewayEngine = new TWEngine(this);
+    timewayEngine.startScreen(new Startup(timewayEngine));
+    
+    requestAndroidPermissions();
 }
 
 void draw() {
   if (timewayEngine == null) {
-    timewayEngine = new Engine(this);
+    timewayEngine = new TWEngine(this);
   }
   else {
       // Show error message on crash
       if (sketch_showCrashScreen || sketch_FORCE_CRASH_SCREEN) {
         
         try {
+          // Run Timeway.
           timewayEngine.engine();
         }
         catch (java.lang.OutOfMemoryError outofmem) {
-          sketch_openErrorLog(
-          "Sorry! Timeway has run out of memory! D:\n"+
-          "Either: \n"+
-          "You loaded a massive number of files from a folder\n"+
-          "or\n"+
-          "The OutOfMemoryError protection system failed. This could be a bug."
-          );
+          sketch_openErrorLog(TWEngine.APP_NAME+" has run out of memory.");
           exit();
         }
         catch (Exception e) {
@@ -154,10 +186,10 @@ void draw() {
           exit();
         }
       }
-      // Let it gracefully crash
+      
+      // Run Timeway.
       else timewayEngine.engine();
   }
-  
 }
 
 
@@ -198,4 +230,47 @@ void outputFileSelected(File selection) {
 
 void mouseClicked() {
   if (timewayEngine != null && timewayEngine.input != null) timewayEngine.input.clickEventAction();
+}
+
+
+// Because TWEngine is designed to be isolated from the rest of... well, Timeweay,
+// there are some things that TWEngine needs to access that are external to the engine,
+// and isolating it would mean those external dependancies wouldn't exist.
+// These methods handle these external dependencies required by the engine through
+// void methods
+@SuppressWarnings("unused")
+void twengineRequestEditor(String path) {
+  //timewayEngine.requestScreen(new Editor(timewayEngine, path));
+}
+
+@SuppressWarnings("unused")
+void twengineRequestUpdater(JSONObject json) {
+  //timewayEngine.requestScreen(new Updater(timewayEngine, json));
+}
+
+//@SuppressWarnings("unused")
+void twengineRequestBenchmarks() {
+  //timewayEngine.requestScreen(new Updater(timewayEngine, json));
+  //timewayEngine.requestScreen(new Benchmark(this));
+}
+
+//@SuppressWarnings("unused")
+boolean hasPixelrealm() {
+  return false;
+}
+
+
+//@SuppressWarnings("unused")
+boolean pixelrealmCache() {
+  //boolean cacheHit = false;
+  //cacheHit |= sound.cacheHit(DEFAULT_DIR+"/"+PixelRealm.REALM_BGM+".wav");
+  //cacheHit |= sound.cacheHit(DEFAULT_DIR+"/"+PixelRealm.REALM_BGM+".ogg");
+  //cacheHit |= sound.cacheHit(DEFAULT_DIR+"/"+PixelRealm.REALM_BGM+".mp3");
+  //cacheHit |= sound.cacheHit(DEFAULT_DIR+"/"+file.unhide(PixelRealm.REALM_BGM+".wav"));
+  //cacheHit |= sound.cacheHit(DEFAULT_DIR+"/"+file.unhide(PixelRealm.REALM_BGM+".ogg"));
+  //cacheHit |= sound.cacheHit(DEFAULT_DIR+"/"+file.unhide(PixelRealm.REALM_BGM+".mp3"));
+  //cacheHit |= sound.cacheHit(APPPATH+PixelRealm.REALM_BGM_DEFAULT);
+  //cacheHit |= sound.cacheHit(APPPATH+PixelRealm.REALM_BGM_DEFAULT_LEGACY);
+  //return cacheHit;
+  return false;
 }
