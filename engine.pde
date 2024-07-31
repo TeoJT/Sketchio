@@ -1518,13 +1518,13 @@ public class TWEngine {
       
       
       if (image == null) {
-        app.image(errorImg, x, y, w, h);
+        currentPG.image(errorImg, x, y, w, h);
         recordLogicTime();
         console.warnOnce("Image listed as 'loaded' but image doesn't seem to exist.");
         return;
       }
       if (image.width == -1 || image.height == -1) {
-        app.image(errorImg, x, y, w, h);
+        currentPG.image(errorImg, x, y, w, h);
         recordLogicTime();
         console.warnOnce("Corrupted image.");
         return;
@@ -1532,7 +1532,7 @@ public class TWEngine {
       // If image is loaded render.
       if (image.width > 0 && image.height > 0) {
         if (image.mode == 1) {
-          app.image(image.pimage, x, y, w, h);
+          currentPG.image(image.pimage, x, y, w, h);
         }
         else if (image.mode == 2) {
           largeImg(currentPG, image.largeImage, x, y, w, h);
@@ -1572,7 +1572,7 @@ public class TWEngine {
         img(systemImages.get(name), x, y, w, h);
       } else {
         recordRendererTime();
-        app.image(errorImg, x, y, w, h);
+        currentPG.image(errorImg, x, y, w, h);
         recordLogicTime();
         console.warnOnce("Image "+name+" does not exist");
       }
@@ -1584,7 +1584,7 @@ public class TWEngine {
         img(systemImages.get(name), x, y, image.width, image.height);
       } else {
         recordRendererTime();
-        app.image(errorImg, x, y, errorImg.width, errorImg.height);
+        currentPG.image(errorImg, x, y, errorImg.width, errorImg.height);
         recordLogicTime();
         console.warnOnce("Image "+name+" does not exist");
       }
@@ -2290,6 +2290,39 @@ public class TWEngine {
     
     public boolean miniMenuShown() {
       return (currMinimenu != null);
+    }
+    
+    float textAreaZoom = 22.0;
+    
+    public void displayTextArea(float x, float y, float wi, float hi) {
+      // TODO: I really wanna use our shaders to reduce shader-switching
+      // instead of processing's shaders.
+      app.resetShader();
+      // Draw background
+      app.fill(60);
+      app.noStroke();
+      app.rect(x, y, wi, hi);
+      
+      String displayText = input.keyboardMessage;
+      
+      if (input.altDown && input.keys[int('=')] == 2) {
+        textAreaZoom += 2.;
+        input.backspace();
+      }
+      if (input.altDown && input.keys[int('-')] == 2) {
+        textAreaZoom -= 2.;
+        input.backspace();
+      }
+      
+      x += 5;
+      y += 5;
+        
+      app.fill(255);
+      app.textAlign(LEFT, TOP);
+      app.textFont(display.getFont("Source Code"), textAreaZoom);
+      app.textLeading(textAreaZoom);
+      app.text(displayText, x, y/*, wi-10, hi-10*/);
+      input.blinkingCursor(x, y);
     }
   }
 
@@ -3151,7 +3184,6 @@ public class TWEngine {
       musicFadeOut = 0.99;
     }
     
-    // TODO: Doesn't work totally.
     public void fadeAndStopMusic() {
       if (musicFadeOut < 1.) {
         if (streamerMusicFadeTo != null) {
@@ -3611,7 +3643,6 @@ public class TWEngine {
     
     
   
-    // TODO: change this so that you can modify the default dir.
     // TODO: Make it follow the UNIX file system with compatibility with windows.
     public String currentDir;
     public class DisplayableFile {
@@ -4410,7 +4441,6 @@ public class TWEngine {
           }
           catch (Exception e) {
             System.err.println("Run plugin exception: "+ e.getClass().getSimpleName());
-            exit();
           }
         }
       }
@@ -6468,6 +6498,9 @@ public class TWEngine {
     private float cache_mouseX = 0.0;
     private float cache_mouseY = 0.0;
     public  float scrollOffset = 0.0;
+    private int cursorX = 0;
+    private int cursorY = 0;
+    private float blinkTime = 0.0;
     
     public int keys[]       = new int[1024];
     private int robotKeys[] = new int[1024];
@@ -6478,6 +6511,10 @@ public class TWEngine {
     public boolean ctrlDown = false;
     public boolean altDown  = false;
     public boolean enterDown = false;
+    public boolean leftDown = false;
+    public boolean rightDown = false;
+    public boolean upDown = false;
+    public boolean downDown = false;
     
     // Down counters
     private int backspaceDownCounter = 0;
@@ -6485,6 +6522,10 @@ public class TWEngine {
     private int ctrlDownCounter = 0;
     private int altDownCounter  = 0;
     private int enterDownCounter = 0;
+    private int leftDownCounter = 0;
+    private int rightDownCounter = 0;
+    private int upDownCounter = 0;
+    private int downDownCounter = 0;
     
     // Once
     public boolean backspaceOnce = false;
@@ -6492,6 +6533,11 @@ public class TWEngine {
     public boolean ctrlOnce = false;
     public boolean altOnce  = false;
     public boolean enterOnce = false;
+    public boolean leftOnce = false;
+    public boolean rightOnce = false;
+    public boolean upOnce = false;
+    public boolean downOnce = false;
+    
     
     public InputModule() {
       scrollSensitivity = settings.getFloat("scrollSensitivity");
@@ -6518,6 +6564,7 @@ public class TWEngine {
       secondaryClick = false;
       primaryReleased = false;
       secondaryReleased = false;
+      keyOnce = false;
       
       normalClickTimeout -= display.getDelta();
   
@@ -6558,6 +6605,10 @@ public class TWEngine {
       // Oneshot key control
       for (int i = 0; i < 1024; i++) {
         if (keys[i] > 0) {
+          // If at least one of them is pressed, keyOnce is true
+          if (keys[i] == 1) {
+            keyOnce = true;
+          }
           keys[i]++;
         }
         if (robotKeys[i] > 0) {
@@ -6575,6 +6626,10 @@ public class TWEngine {
       if (ctrlDown) ctrlDownCounter++; else ctrlDownCounter = 0;
       if (altDown) altDownCounter++; else altDownCounter = 0;
       if (enterDown) enterDownCounter++; else enterDownCounter = 0;
+      if (leftDown) leftDownCounter++; else leftDownCounter = 0;
+      if (rightDown) rightDownCounter++; else rightDownCounter = 0;
+      if (upDown) upDownCounter++; else upDownCounter = 0;
+      if (downDown) downDownCounter++; else downDownCounter = 0;
       
       
       backspaceOnce = (backspaceDownCounter == 1);
@@ -6582,6 +6637,10 @@ public class TWEngine {
       ctrlOnce = (ctrlDownCounter == 1);
       altOnce = (altDownCounter == 1);
       enterOnce = (enterDownCounter == 1);
+      leftOnce = (leftDownCounter == 1);
+      rightOnce = (rightDownCounter == 1);
+      upOnce = (upDownCounter == 1);
+      downOnce = (downDownCounter == 1);
       
       // Holding counter (for repeating held keys)
       if (keyHoldCounter >= 1.) {
@@ -6599,6 +6658,62 @@ public class TWEngine {
         }
         holdKeyFrames += display.getDelta();
       }
+      
+      
+      // ************TYPING*******************
+      boolean solidifyBlink = true;
+      
+      if (leftOnce) { 
+        cursorX--;
+      }
+      else if (rightOnce) {
+        cursorX++;
+      }
+      else if (upOnce) { 
+        // Start of current line
+        int startOfCurrLine = keyboardMessage.lastIndexOf('\n', cursorX)+1;
+        int dist = cursorX-startOfCurrLine;
+        
+        // start of prev line
+        int startOfPrevLine = keyboardMessage.lastIndexOf('\n', startOfCurrLine-2)+1;
+        
+        // Let's say for example you move your cursor like this:
+        //
+        // short
+        // A longer mess|ge hello world
+        // 
+        // short|
+        // A longer message hello world
+        //
+        // As you can see, "short" is not long enough to plonk the cursor into the new position,
+        // so it gets put at the start.
+        if (startOfCurrLine-startOfPrevLine < dist) {
+          cursorX = startOfCurrLine-1;
+        }
+        else {
+          cursorX = startOfPrevLine+dist;
+        }
+      }
+      else if (downOnce) { 
+        // Start of current line
+        int startOfThisLine = keyboardMessage.lastIndexOf('\n', cursorX-1)+1;
+        int startOfNextLine = keyboardMessage.indexOf('\n', cursorX)+1;
+        if (startOfNextLine != 0) {
+          int dist = cursorX-startOfThisLine;
+          cursorX = startOfNextLine+dist;
+        }
+      }
+      else if (keyOnce) {}
+      else solidifyBlink = false;
+      
+      if (solidifyBlink) {
+        blinkTime = 0.0;
+      }
+      cursorX = max(min(cursorX, keyboardMessage.length()), 0);
+    
+      blinkTime += display.getDelta();
+    
+      
   
       //*************MOUSE WHEEL*************
       if (rawScroll != 0) {
@@ -6624,6 +6739,18 @@ public class TWEngine {
         case ALT:
           altDown = false;
           break;
+        case LEFT:
+          leftDown = false;
+          break;
+        case RIGHT:
+          rightDown = false;
+          break;
+        case UP:
+          upDown = false;
+          break;
+        case DOWN:
+          downDown = false;
+          break;
         // For android
         case 67:
           backspaceDown = false;
@@ -6642,6 +6769,31 @@ public class TWEngine {
       if (val >= 1024) return;
       
       keys[val] = 0;
+    }
+    
+    public void blinkingCursor(float offsetX, float offsetY) {
+      float lineSpacing = 0.0;
+      if (int(blinkTime) % 60 < 30) {
+        float lineHeight = app.textAscent()+app.textDescent();
+        
+        int indx1 = keyboardMessage.lastIndexOf('\n', cursorX-1);
+        int indx2 = cursorX;  //keyboardMessage.indexOf('\n', cursorX);
+        
+        if (indx1 == -1) indx1 = 0;
+        if (indx2 == -1) indx2 = cursorX;
+        
+        String newlines = "";
+        int indx = keyboardMessage.indexOf('\n');
+        while (indx != -1 && indx < cursorX) {
+          newlines += '\n';
+          indx = keyboardMessage.indexOf('\n', indx+1);
+        }
+        //!(newlines.length() > 0 && indx1 != -1 && keyboardMessage.charAt(cursorX) == '\n' ) 
+        if (newlines.length() > 0) newlines = newlines.substring(1);
+        
+        app.fill(255);
+        app.text(newlines+keyboardMessage.substring(indx1, indx2)+"█", offsetX, offsetY);
+      }
     }
   
     public boolean keyDown(char k) {
@@ -6699,8 +6851,12 @@ public class TWEngine {
     }
   
     public void backspace() {
-      if (this.keyboardMessage.length() > 0) {
-        this.keyboardMessage = this.keyboardMessage.substring(0, this.keyboardMessage.length()-1);
+      if (this.keyboardMessage.length() > 0 && cursorX > 0) {
+        if (keyboardMessage.charAt(cursorX-1) == '\n')
+          cursorY--;
+        cursorY = max(cursorY, 0);
+        this.keyboardMessage = keyboardMessage.substring(0, cursorX-1)+keyboardMessage.substring(cursorX);
+        cursorX--;
       }
     }
     
@@ -6794,6 +6950,22 @@ public class TWEngine {
           case ALT:
             altDown = true;
             return;
+          case LEFT:
+            leftDownCounter = 0;
+            leftDown = true;
+            break;
+          case RIGHT:
+            rightDownCounter = 0;
+            rightDown = true;
+            break;
+          case UP:
+            upDownCounter = 0;
+            upDown = true;
+            break;
+          case DOWN:
+            downDownCounter = 0;
+            downDown = true;
+            break;
           case 67:
             this.backspace();
             backspaceDown = true;
@@ -6802,7 +6974,7 @@ public class TWEngine {
         // 10 for android
       } else if (kkey == ENTER || kkey == RETURN || int(kkey) == 10) {
         if (this.addNewlineWhenEnterPressed) {
-          this.keyboardMessage += "\n";
+          insert('\n');
         }
         enterDown = true;
         // 65535 67 for android
@@ -6811,7 +6983,7 @@ public class TWEngine {
         backspaceDown = true;
       }
       else {
-        this.keyboardMessage += kkey;
+        insert(kkey);
       }
       
       // And actually set the current pressed key state
@@ -6822,8 +6994,23 @@ public class TWEngine {
       keys[val] = 1;
       stats.increase("keys_pressed", 1);
     }
+  
+    public void insert(char c) {
+      // Remember, we now have a cursor.
+      // If we're typing at the end, simply append char (like normal)
+      if (cursorX == keyboardMessage.length()) {
+        keyboardMessage += c;
+      }
+      // Otherwise, add the char in between the text.
+      else {
+        this.keyboardMessage = keyboardMessage.substring(0, cursorX) + c + keyboardMessage.substring(cursorX);
+      }
+      cursorX++;
+      if (c == '\n') {
+        cursorY++;
+      }
+    }
   }
-
   // Cus why replace 9999999 lines of code when you can write 6 new lines of code that makes sure everything still works.
   public float mouseX() {
     return input.mouseX();
