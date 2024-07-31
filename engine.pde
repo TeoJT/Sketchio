@@ -1029,7 +1029,7 @@ public class TWEngine {
     private float time = 0.;
     private float selectBorderTime = 0.;
     public boolean showCPUBenchmarks = false;
-    private PGraphics currentPG;
+    public PGraphics currentPG;
     private boolean allAtOnce = false;
     private LargeImage white;
     private IntBuffer clearList;
@@ -1541,21 +1541,21 @@ public class TWEngine {
         // Annnnd a wireframe
         if (wireframe) {
           recordRendererTime();
-          app.stroke(sin(selectBorderTime)*127+127, 100);
+          currentPG.stroke(sin(selectBorderTime)*127+127, 100);
           selectBorderTime += 0.1*getDelta();
-          app.strokeWeight(3);
-          app.noFill();
+          currentPG.strokeWeight(3);
+          currentPG.noFill();
           
-          app.beginShape(QUADS);
-          app.vertex(x, y);
-          app.vertex(x+w, y);
-          app.vertex(x+w, y+h);
-          app.vertex(x, y+h);
-          app.endShape();
+          currentPG.beginShape(QUADS);
+          currentPG.vertex(x, y);
+          currentPG.vertex(x+w, y);
+          currentPG.vertex(x+w, y+h);
+          currentPG.vertex(x, y+h);
+          currentPG.endShape();
           
-          app.noStroke();
+          currentPG.noStroke();
         } else {
-          app.noStroke();
+          currentPG.noStroke();
         }
         
         
@@ -4413,6 +4413,7 @@ public class TWEngine {
       private Method pluginGetArgs;
       private Method pluginSetRet;
       private Object pluginIntance;
+      public PGraphics sketchioGraphics;
       
       // Need this because the run method needs our plugin object.
       private Plugin thisPlugin;
@@ -4483,9 +4484,14 @@ public class TWEngine {
         
         // here we call setup(). Maybe TODO: perhaps we should have an onLoad() then an actual setup()?
         try {
-          Method passAppletMethod = pluginClass.getDeclaredMethod("setup", PApplet.class, Runnable.class);
-          
-          passAppletMethod.invoke(pluginIntance, app, callAPI);
+          if (sketchioGraphics != null) {
+            Method passAppletMethod = pluginClass.getDeclaredMethod("setup", PApplet.class, Runnable.class, PGraphics.class);
+            passAppletMethod.invoke(pluginIntance, app, callAPI, sketchioGraphics);
+          }
+          else {
+            Method passAppletMethod = pluginClass.getDeclaredMethod("setup", PApplet.class, Runnable.class);
+            passAppletMethod.invoke(pluginIntance, app, callAPI);
+          }
         }
         // TODO: extended error checking
         catch (Exception e) {
@@ -6546,8 +6552,8 @@ public class TWEngine {
       
     public void runInputManagement() {
       //*************MOUSE MOVEMENT*************
-      cache_mouseX = mouseX/display.getScale();
-      cache_mouseY = mouseY/display.getScale();
+      cache_mouseX = app.mouseX/display.getScale();
+      cache_mouseY = app.mouseY/display.getScale();
       
       
       
@@ -7511,6 +7517,10 @@ public final class SpriteSystemPlaceholder {
         public boolean suppressSpriteWarning = false;
         public boolean repositionSpritesToScale = true;
         public boolean allowSelectOffContentPane = true;
+        public float mouseScaleX = 1.0;
+        public float mouseScaleY = 1.0;
+        public float mouseOffsetX = 0.0;
+        public float mouseOffsetY = 0.0;
 
         public String PATH_SPRITES_ATTRIB;
         public String APPPATH; 
@@ -7521,6 +7531,13 @@ public final class SpriteSystemPlaceholder {
         public final int ROTATE = 4;   
         
         public float selectBorderTime = 0.;
+        
+        private float mouseX() {
+          return ((engine.mouseX()-mouseOffsetX)/mouseScaleX);
+        }
+        private float mouseY() {
+          return ((engine.mouseY()-mouseOffsetY)/mouseScaleY);
+        }
 
         // Use this constructor for no saving sprite data.
         public SpriteSystemPlaceholder(TWEngine engine) {
@@ -7558,18 +7575,18 @@ public final class SpriteSystemPlaceholder {
             
             public void update() {
                 draggingEnd = false;
-                if (!mousePressed && dragging) {
+                if (!engine.input.primaryDown && dragging) {
                 dragging = false;
                 draggingEnd = true;
                 }
                 if (clickDelay > 0) {
                 clickDelay--;
                 }
-                if (!click && mousePressed) {
+                if (!click && engine.input.primaryDown) {
                 click = true;
                 clickDelay = 1;
                 }
-                if (click && !mousePressed) {
+                if (click && !engine.input.primaryDown) {
                 click = false;
                 }
             }
@@ -7579,7 +7596,7 @@ public final class SpriteSystemPlaceholder {
             }
             
             public void beginDrag() {
-                if (mousePressed && clickDelay > 0) {
+                if (engine.input.primaryDown && clickDelay > 0) {
                 dragging = true;
                 }
             }
@@ -7913,7 +7930,7 @@ public final class SpriteSystemPlaceholder {
                 switch (mode) {
                 case SINGLE: {
                     float d = BOX_SIZE, x = (float)wi-d+xpos, y = (float)hi-d+ypos;
-                    if (engine.mouseX() > x && engine.mouseY() > y && engine.mouseX() < x+d && engine.mouseY() < y+d) {
+                    if (mouseX() > x && mouseY() > y && mouseX() < x+d && mouseY() < y+d) {
                       return true;
                     }
                 }
@@ -7923,8 +7940,8 @@ public final class SpriteSystemPlaceholder {
                     float d = BOX_SIZE, x1 = (float)wi-(d/2)+xpos, y1 = (float)(hi/2)-(d/2)+ypos;
                   // height square
                     float               x2 = (float)(wi/2)-(d/2)+xpos, y2 = (float)(hi)-(d/2)+ypos;
-                    if ((engine.mouseX() > x1 && engine.mouseY() > y1 && engine.mouseX() < x1+d && engine.mouseY() < y1+d)
-                    || (engine.mouseX() > x2 && engine.mouseY() > y2 && engine.mouseX() < x2+d && engine.mouseY() < y2+d)) {
+                    if ((mouseX() > x1 && mouseY() > y1 && mouseX() < x1+d && mouseY() < y1+d)
+                    || (mouseX() > x2 && mouseY() > y2 && mouseX() < x2+d && mouseY() < y2+d)) {
                       return true;
                     }
                 }
@@ -7934,7 +7951,7 @@ public final class SpriteSystemPlaceholder {
                     float d = BOX_SIZE;
                     float x = vertex.v[i].x;
                     float y = vertex.v[i].y;
-                    if (engine.mouseX() > x-d/2 && engine.mouseY() > y-d/2 && engine.mouseX() < x+d/2 && engine.mouseY() < y+d/2) {
+                    if (mouseX() > x-d/2 && mouseY() > y-d/2 && mouseX() < x+d/2 && mouseY() < y+d/2) {
                         return true;
                     }
                     }
@@ -7953,7 +7970,7 @@ public final class SpriteSystemPlaceholder {
                 float d = BOX_SIZE;
                 float x = cx+sin(rot)*radius,  y = cy+cos(rot)*radius;
                 
-                if (engine.mouseX() > x-d/2 && engine.mouseY() > y-d/2 && engine.mouseX() < x+d/2 && engine.mouseY() < y+d/2) {
+                if (mouseX() > x-d/2 && mouseY() > y-d/2 && mouseX() < x+d/2 && mouseY() < y+d/2) {
                     return true;
                 }
                 break;
@@ -7961,7 +7978,7 @@ public final class SpriteSystemPlaceholder {
                     d = BOX_SIZE;
                     x = (float)wi-d+xpos;
                     y = (float)hi-d+ypos;
-                    if (engine.mouseX() > x && engine.mouseY() > y && engine.mouseX() < x+d && engine.mouseY() < y+d) {
+                    if (mouseX() > x && mouseY() > y && mouseX() < x+d && mouseY() < y+d) {
                     return true;
                     }
                 }
@@ -8018,7 +8035,7 @@ public final class SpriteSystemPlaceholder {
                 vertex.v[0].x = x;
                 vertex.v[0].y = y;
                 
-                return polyPoint(vertex.v, engine.mouseX(), engine.mouseY());
+                return polyPoint(vertex.v, mouseX(), mouseY());
             }
             
             
@@ -8026,15 +8043,15 @@ public final class SpriteSystemPlaceholder {
                 switch (mode) {
                 case SINGLE: {
                     float x = xpos, y = ypos;
-                    return (engine.mouseX() > x && engine.mouseY() > y && engine.mouseX() < x+wi && engine.mouseY() < y+hi);
+                    return (mouseX() > x && mouseY() > y && mouseX() < x+wi && mouseY() < y+hi);
                     //return (mouseX > x && mouseY > y && mouseX < x+wi && mouseY < y+hi && !repositionDrag.isDragging());
                 }
                 case DOUBLE: {
                     float x = xpos, y = ypos;
-                    return (engine.mouseX() > x && engine.mouseY() > y && engine.mouseX() < x+wi && engine.mouseY() < y+hi);
+                    return (mouseX() > x && mouseY() > y && mouseX() < x+wi && mouseY() < y+hi);
                 }
                 case VERTEX:
-                    return polyPoint(vertex.v, engine.mouseX(), engine.mouseY());
+                    return polyPoint(vertex.v, mouseX(), mouseY());
                 case ROTATE: {
                     return rotateCollision();
                 }
@@ -8102,25 +8119,25 @@ public final class SpriteSystemPlaceholder {
                 repositionDrag.beginDrag();
                 
                 //X and Y position
-                repositionDragStartX = this.xpos-engine.mouseX();
-                repositionDragStartY = this.ypos-engine.mouseY();
+                repositionDragStartX = this.xpos-mouseX();
+                repositionDragStartY = this.ypos-mouseY();
                 
                 //Vertex position
                 for (int i = 0; i < 4; i++) {
-                    repositionV.v[i].set(vertex.v[i].x-engine.mouseX(), vertex.v[i].y-engine.mouseY());
+                    repositionV.v[i].set(vertex.v[i].x-mouseX(), vertex.v[i].y-mouseY());
                 }
                 }
                 if (repositionDrag.isDragging()) {
                 //X and y position
-                this.xpos = repositionDragStartX+engine.mouseX();
-                this.ypos = repositionDragStartY+engine.mouseY();
+                this.xpos = repositionDragStartX+mouseX();
+                this.ypos = repositionDragStartY+mouseY();
                 
                 defxpos = xpos-offxpos;
                 defypos = ypos-offypos;
                 
                 //Vertex position
                 for (int i = 0; i < 4; i++) {
-                    vertex.v[i].set(repositionV.v[i].x+engine.mouseX(), repositionV.v[i].y+engine.mouseY());
+                    vertex.v[i].set(repositionV.v[i].x+mouseX(), repositionV.v[i].y+mouseY());
                     defvertex.v[i].set(vertex.v[i].x-offvertex.v[i].x, vertex.v[i].y-offvertex.v[i].y);
                 }
                 }
@@ -8162,15 +8179,15 @@ public final class SpriteSystemPlaceholder {
                     float d = BOX_SIZE, x = (float)wi-d+xpos, y = (float)hi-d+ypos;
                     resizeDrag.update();
                     this.square(x,y, d);
-                    if (engine.mouseX() > x && engine.mouseY() > y && engine.mouseX() < x+d && engine.mouseY() < y+d) {
+                    if (mouseX() > x && mouseY() > y && mouseX() < x+d && mouseY() < y+d) {
                     resizeDrag.beginDrag();
                     this.hoveringOverResizeSquare = true;
                     } else {
                     this.hoveringOverResizeSquare = false;
                     }
                     if (resizeDrag.isDragging()) {
-                    wi = int((engine.mouseX()+d/2-xpos));
-                    hi = int((engine.mouseX()+d/2-xpos)*aspect);
+                    wi = int((mouseX()+d/2-xpos));
+                    hi = int((mouseX()+d/2-xpos)*aspect);
                     
                     defwi = wi-offwi;
                     defhi = hi-offhi;
@@ -8190,12 +8207,12 @@ public final class SpriteSystemPlaceholder {
                     resizeDrag.update();
                     this.square(x1, y1, d);
                     this.square(x2, y2, d);
-                    if (engine.mouseX() > x1 && engine.mouseY() > y1 && engine.mouseX() < x1+d && engine.mouseY() < y1+d) {
+                    if (mouseX() > x1 && mouseY() > y1 && mouseX() < x1+d && mouseY() < y1+d) {
                       resizeDrag.beginDrag();
                       // whatever we're using currentVertex
                       currentVertex = 1;
                       this.hoveringOverResizeSquare = true;
-                    } else if (engine.mouseX() > x2 && engine.mouseY() > y2 && engine.mouseX() < x2+d && engine.mouseY() < y2+d) {
+                    } else if (mouseX() > x2 && mouseY() > y2 && mouseX() < x2+d && mouseY() < y2+d) {
                       resizeDrag.beginDrag();
                       // whatever we're using currentVertex
                       currentVertex = 2;
@@ -8208,10 +8225,10 @@ public final class SpriteSystemPlaceholder {
                     
                     if (resizeDrag.isDragging()) {
                       if (currentVertex == 1) {
-                        wi = int((engine.mouseX()+d/2-xpos));
+                        wi = int((mouseX()+d/2-xpos));
                       }
                       else if (currentVertex == 2) {
-                        hi = int((engine.mouseY()+d/2-ypos));
+                        hi = int((mouseY()+d/2-ypos));
                       }
                       
                       defwi = wi-offwi;
@@ -8232,7 +8249,7 @@ public final class SpriteSystemPlaceholder {
                       float y = vertex.v[i].y;
                       this.square(x-d/2, y-d/2, d);
                       
-                      if (engine.mouseX() > x-d/2 && engine.mouseY() > y-d/2 && engine.mouseX() < x+d/2 && engine.mouseY() < y+d/2) {
+                      if (mouseX() > x-d/2 && mouseY() > y-d/2 && mouseX() < x+d/2 && mouseY() < y+d/2) {
                           resizeDrag.beginDrag();
                           currentVertex = i;
                           this.hoveringOverResizeSquare = true;
@@ -8240,8 +8257,8 @@ public final class SpriteSystemPlaceholder {
                           this.hoveringOverResizeSquare = false;
                       }
                       if (resizeDrag.isDragging() && currentVertex == i) {
-                          vertex.v[i].x = engine.mouseX();
-                          vertex.v[i].y = engine.mouseY();
+                          vertex.v[i].x = mouseX();
+                          vertex.v[i].y = mouseY();
                           defvertex.v[i].set(vertex.v[i].x-offvertex.v[i].x, vertex.v[i].y-offvertex.v[i].y);
                       }
                     }
@@ -8260,7 +8277,7 @@ public final class SpriteSystemPlaceholder {
                     
                     this.square(x-d/2, y-d/2, d);
                     
-                    if (engine.mouseX() > x-d/2 && engine.mouseY() > y-d/2 && engine.mouseX() < x+d/2 && engine.mouseY() < y+d/2) {
+                    if (mouseX() > x-d/2 && mouseY() > y-d/2 && mouseX() < x+d/2 && mouseY() < y+d/2) {
                     resizeDrag.beginDrag();
                     this.hoveringOverResizeSquare = true;
                     } else {
@@ -8268,8 +8285,8 @@ public final class SpriteSystemPlaceholder {
                     }
                     
                     if (resizeDrag.isDragging()) {
-                    float decx = (engine.mouseX())-cx;
-                    float decy = cy-(engine.mouseY());
+                    float decx = (mouseX())-cx;
+                    float decy = cy-(mouseY());
                     if (decy < 0) {
                         rot = atan(-decx/decy);
                     }
@@ -8313,8 +8330,8 @@ public final class SpriteSystemPlaceholder {
 
             private void square(float x, float y, float d) {
                 noStroke();
-                app.fill(sin(selectBorderTime += 0.1*engine.display.getDelta())*50+200, 100);
-                app.rect(x, y, d, d);
+                engine.display.currentPG.fill(sin(selectBorderTime += 0.1*engine.display.getDelta())*50+200, 100);
+                engine.display.currentPG.rect(x, y, d, d);
             }
         }
         
@@ -8693,6 +8710,16 @@ public final class SpriteSystemPlaceholder {
             this.generalClick.update();
             this.runSpriteInteraction();
             this.emptySpriteStack();
+        }
+        
+        public void setMouseScale(float x, float y) {
+          mouseScaleX = x;
+          mouseScaleY = y;
+        }
+        
+        public void setMouseOffset(float x, float y) {
+          mouseOffsetX = x;
+          mouseOffsetY = y;
         }
 
     }

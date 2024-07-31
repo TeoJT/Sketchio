@@ -6,6 +6,7 @@ import processing.opengl.*;
 public class CustomPlugin {
 
   public PApplet app;
+  public PGraphics g;
   public final float PI = PApplet.PI;
   public final float HALF_PI = PApplet.HALF_PI;
   public final float TWO_PI = PApplet.TWO_PI;
@@ -107,9 +108,10 @@ public class CustomPlugin {
     this.ret = ret;
   }
 
-  public void setup(PApplet p, Runnable api) {
+  public void setup(PApplet p, Runnable api, PGraphics g) {
     this.app = p;
     this.apiCall = api;
+    this.g = g;
 
     // Start doesn't exist in this file alone,
     // but should be there after generator processes
