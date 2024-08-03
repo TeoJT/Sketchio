@@ -2303,7 +2303,6 @@ public class TWEngine {
       app.noStroke();
       app.rect(x, y, wi, hi);
       
-      String displayText = input.keyboardMessage;
       
       if (input.altDown && input.keys[int('=')] == 2) {
         textAreaZoom += 2.;
@@ -2321,8 +2320,8 @@ public class TWEngine {
       app.textAlign(LEFT, TOP);
       app.textFont(display.getFont("Source Code"), textAreaZoom);
       app.textLeading(textAreaZoom);
-      app.text(displayText, x, y/*, wi-10, hi-10*/);
-      input.blinkingCursor(x, y);
+      app.text(input.keyboardMessageDisplay(), x, y/*, wi-10, hi-10*/);
+      
     }
   }
 
@@ -4808,8 +4807,7 @@ public class TWEngine {
 
   public void displayInputPrompt() {
     if (inputPromptShown) {
-      if (keyCode == UP) {
-        keyCode = 0;
+      if (input.upOnce) {
         if (lastInput.length() > 0) {
           input.keyboardMessage = lastInput;
         }
@@ -6777,29 +6775,20 @@ public class TWEngine {
       keys[val] = 0;
     }
     
-    public void blinkingCursor(float offsetX, float offsetY) {
-      float lineSpacing = 0.0;
+    public String keyboardMessageDisplay() {
       if (int(blinkTime) % 60 < 30) {
-        float lineHeight = app.textAscent()+app.textDescent();
-        
-        int indx1 = keyboardMessage.lastIndexOf('\n', cursorX-1);
-        int indx2 = cursorX;  //keyboardMessage.indexOf('\n', cursorX);
-        
-        if (indx1 == -1) indx1 = 0;
-        if (indx2 == -1) indx2 = cursorX;
-        
-        String newlines = "";
-        int indx = keyboardMessage.indexOf('\n');
-        while (indx != -1 && indx < cursorX) {
-          newlines += '\n';
-          indx = keyboardMessage.indexOf('\n', indx+1);
+        // Blinking cursor replaces the current character with █
+        // But we do NOT want it to replace \n since this will remove the newline and make
+        // the text all wonky.
+        // Also ignore all the min(), I don't want to get a StringIndexOutOfBoundsException.
+        if (keyboardMessage.charAt(min(cursorX, keyboardMessage.length()-1)) == '\n') {
+          return keyboardMessage.substring(0, cursorX)+"█"+keyboardMessage.substring(min(cursorX, keyboardMessage.length()-1));
         }
-        //!(newlines.length() > 0 && indx1 != -1 && keyboardMessage.charAt(cursorX) == '\n' ) 
-        if (newlines.length() > 0) newlines = newlines.substring(1);
-        
-        app.fill(255);
-        app.text(newlines+keyboardMessage.substring(indx1, indx2)+"█", offsetX, offsetY);
+        else {
+          return keyboardMessage.substring(0, cursorX)+"█"+keyboardMessage.substring(min(cursorX+1, keyboardMessage.length()));
+        }
       }
+      return keyboardMessage;
     }
   
     public boolean keyDown(char k) {

@@ -12,10 +12,13 @@ public class Sketchpad extends Screen {
   private float canvasX = 0.0;
   private float canvasY = 0.0;
   boolean once = true;
+  private ArrayList<String> imagesInSketch;  // This is so that we can know what to remove when we exit this screen.
+
   
   
   public Sketchpad(TWEngine engine) {
     super(engine);
+    myUpperBarWeight = 100.;
     
     gui = new SpriteSystemPlaceholder(engine, engine.APPPATH+engine.PATH_SPRITES_ATTRIB+"gui/test/");
     gui.interactable = false;
@@ -29,6 +32,8 @@ public class Sketchpad extends Screen {
     
     canvasY = myUpperBarWeight;
     
+    
+    
     plugin = plugins.createPlugin();
     plugin.sketchioGraphics = canvas;
     
@@ -38,7 +43,6 @@ public void start() {
   print("Hello worlddd");
 }
 
-int tmr = 0;
 public void run() {
   g.background(120, 100, 140);
   sprite("app-3", "logo");
@@ -46,9 +50,8 @@ public void run() {
   moveSprite("app-3", 0, y);
 }
   """;
-    compileCode();
-    
   
+    compileCode();
   }
   
   private void compileCode() {
@@ -145,7 +148,9 @@ public void run() {
   }
   
   public void upperBar() {
+    display.shader("fabric", "color", 0.43,0.4,0.42,1., "intensity", 0.1);
     super.upperBar();
+    app.resetShader();
     ui.useSpriteSystem(gui);
     if (ui.button("compile_button", "media_128", "Compile")) {
       compileCode();
@@ -155,5 +160,24 @@ public void run() {
       ui.loadingIcon(WIDTH-myUpperBarWeight/2-10, myUpperBarWeight/2, myUpperBarWeight);
     }
     gui.updateSpriteSystem();
+  }
+  
+  public void lowerBar() {
+    display.shader("fabric", "color", 0.43,0.4,0.42,1., "intensity", 0.1);
+    super.lowerBar();
+    app.resetShader();
+  }
+  
+  
+  public void finalize() {
+    free();
+  }
+  
+  public void free() {
+     // Clear the images from systemimages to clear up used images.
+     for (String s : imagesInSketch) {
+       display.systemImages.remove(s);
+     }
+     imagesInSketch.clear();
   }
 }

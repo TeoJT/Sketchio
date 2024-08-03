@@ -79,8 +79,8 @@ public class Startup extends Screen {
               engine.initialScreen = true;
               
               // This is the part where we exit the welcome screen and go to our main screen.
-              Sketchpad blank = new Sketchpad(engine);
-              requestScreen(blank);
+              Sketchpad screen = new Sketchpad(engine);
+              requestScreen(screen);
             }
         }
         

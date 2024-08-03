@@ -54,19 +54,21 @@ public Object runTWIT(int opcode, Object[] args) {
         timewayEngine.console.warn((String)args[0]);
         break;
         
-        //moveSprite(float x, float y)
+        // moveSprite(float x, float y)
         case 5:
         timewayEngine.ui.currentSpritePlaceholderSystem.
         getSprite((String)args[0]).offmove((float)args[1], (float)args[2]);
         break;
         
-        //getTime()
+        // getTime()
         case 6:
         return timewayEngine.display.getTime();
         
+        // getDelta()
         case 7:
         return timewayEngine.display.getDelta();
         
+        // getTimeSeconds()
         case 8:
         return timewayEngine.display.getTimeSeconds();
         

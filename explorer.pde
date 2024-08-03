@@ -8,7 +8,6 @@ public class Explorer extends Screen {
   
   //DisplayableFile backButtonDisplayable = null;
   SpriteSystemPlaceholder gui;
-  private float scrollOffset = 0.0;
   private float scrollBottom = 0.0;
   
   public Explorer(TWEngine engine) {
@@ -53,19 +52,19 @@ public class Explorer extends Screen {
       float textHeight = app.textAscent() + app.textDescent();
       float x = 50;
       float wi = TEXT_SIZE + 20;
-      float y = 150 + i*TEXT_SIZE+scrollOffset;
+      float y = 150 + i*TEXT_SIZE+input.scrollOffset;
       
       // Sorry not sorry
       try {
         if (file.currentFiles[i] != null) {
-          if (engine.mouseX() > x && engine.mouseX() < x + app.textWidth(file.currentFiles[i].filename) + wi && engine.mouseY() > y && engine.mouseY() < textHeight + y) {
+          if (!engine.inputPromptShown && engine.mouseX() > x && engine.mouseX() < x + app.textWidth(file.currentFiles[i].filename) + wi && engine.mouseY() > y && engine.mouseY() < textHeight + y) {
             // if mouse is overing over text, change the color of the text
             app.fill(100, 0, 255);
             app.tint(100, 0, 255);
             // if mouse is hovering over text and left click is pressed, go to this directory/open the file
             if (input.primaryClick) {
               if (file.currentFiles[i].isDirectory())
-                scrollOffset = 0.;
+                input.scrollOffset = 0.;
                 
               file.open(file.currentFiles[i]);
             }
@@ -91,109 +90,20 @@ public class Explorer extends Screen {
     
     scrollBottom = max(0, (file.currentFiles.length*TEXT_SIZE-HEIGHT+BOTTOM_SCROLL_EXTEND));
   }
-  
-  private void processScroll(float top, float bottom) {
-    final float ELASTIC_MAX = 100.;
     
-    if (input.scroll != 0.0) {
-      engine.power.setAwake();
-    }
-    else {
-      engine.power.setSleepy();
-    }
-    
-    int n = 1;
-    switch (engine.power.getPowerMode()) {
-          case HIGH:
-          n = 1;
-          break;
-          case NORMAL:
-          n = 2;
-          break;
-          case SLEEPY:
-          n = 4;
-          break;
-          case MINIMAL:
-          n = 1;
-          break;
-    }
-    
-    // Sorry not sorry
-    for (int i = 0; i < n; i++) {
-      if (scrollOffset > top) {
-          scrollOffset -= (scrollOffset-top)*0.1;
-          if (input.scroll < 0.0) scrollOffset += input.scroll;
-          else scrollOffset += input.scroll*(max(0.0, ((ELASTIC_MAX+top)-scrollOffset)/ELASTIC_MAX));
-      }
-      else if (-scrollOffset > bottom) {
-          // TODO: Actually get some pen and paper and make the elastic band edge work.
-          // This is just a placeholder so that it's usable.
-          scrollOffset = -bottom;
-        
-          //scrollOffset += (bottom-scrollOffset)*0.1;
-          //if (engine.scroll > 0.0) scrollOffset += engine.scroll;
-          //else scrollOffset += engine.scroll*(max(0.0, ((-scrollOffset)-(ELASTIC_MAX+bottom))/ELASTIC_MAX));
-      }
-      else scrollOffset += input.scroll;
-    }
-  }
-  
-  
-  // THIS IS COPIED from the editor tab.
-  // TODO: make this use one script from the engine or something.
-  // For the time being let's just have it copy+pasted here.
-  private boolean button(String name, String texture, String displayText) {
-
-        // This doesn't change at all.
-        // I just wanna keep it in case it comes in useful later on.
-        boolean guiClickable = true;
-
-        // Don't want our messy code to spam the console lol.
-        gui.suppressSpriteWarning = true;
-
-        boolean hover = false;
-
-        // Full brightness when not hovering
-        app.tint(255);
-        app.fill(255);
-
-        // To click:
-        // - Must not be in a minimenu
-        // - Must not be in gui move sprite / edit mode.
-        // - also the guiClickable thing.
-        if (gui.buttonHover(name) && guiClickable && !gui.interactable) {
-
-            // Slight gray to indicate hover
-            app.tint(210);
-            app.fill(210);
-            hover = true;
-        }
-
-        // Display the button, will be affected by the hover color.
-        gui.button(name, texture, displayText);
-        app.noTint();
-
-        // Don't have "the boy who called wolf", situation, turn back on warnings
-        // for genuine troubleshooting.
-        gui.suppressSpriteWarning = false;
-
-        // Only when the button is actually clicked.
-        return hover && input.primaryClick;
-    }
-    
-  
   
   private void renderGui() {
     
     //************NEW ENTRY************
-    if (button("new_entry", "new_entry_128", "New entry")) {
+    ui.useSpriteSystem(gui);
+    if (ui.button("new_entry", "new_entry_128", "New entry")) {
       // TODO: placeholder
       //String newName = file.currentDir+engine.appendZeros(numTimewayEntries, 5)+"."+engine.ENTRY_EXTENSION;
       //requestScreen(new Editor(engine, newName));
     }
     
     //************NEW FOLDER************
-    if (button("new_folder", "new_folder_128", "New folder")) {
+    if (ui.button("new_folder", "new_folder_128", "New folder")) {
       
       Runnable r = new Runnable() {
         public void run() {
@@ -208,16 +118,6 @@ public class Explorer extends Screen {
       };
       
       engine.beginInputPrompt("Folder name:", r);
-    }
-    
-    //***********CLOSE BUTTON***********
-    if (button("cross", "cross", "")) {
-      exit();
-    }
-    
-    //***********PIXeL REALM BUTTON***********
-    if (button("world", "world_128", "Pixel Realm")) {
-      //requestScreen(new PixelRealmWithUI(engine, file.currentDir));
     }
     
     gui.updateSpriteSystem();
@@ -264,11 +164,19 @@ public class Explorer extends Screen {
         ui.loadingIcon(WIDTH/2, HEIGHT/2);
       }
       else {
-        processScroll(0., scrollBottom+1.0);
+        input.processScroll(0., scrollBottom+1.0);
         renderDir();
       }
       
-      engine.displayInputPrompt();
+      if (engine.inputPromptShown) {
+        app.fill(100);
+        app.stroke(200);
+        app.strokeWeight(2);
+        float promptWi = 600;
+        float promptHi = 250;
+        app.rect(display.WIDTH/2-promptWi/2, display.HEIGHT/2-promptHi/2, promptWi, promptHi);
+        engine.displayInputPrompt();
+      }
   }
   
 }
