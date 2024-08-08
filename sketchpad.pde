@@ -2,8 +2,9 @@
 
 
 public class Sketchpad extends Screen {
+  private String sketchiePath = "";
   private TWEngine.PluginModule.Plugin plugin;
-  private boolean completeCompilation = false;
+  private boolean compiling = false;
   private boolean successful = false;
   private SpriteSystemPlaceholder sprites;
   private SpriteSystemPlaceholder gui;
@@ -11,10 +12,40 @@ public class Sketchpad extends Screen {
   private float canvasScale = 1.0;
   private float canvasX = 0.0;
   private float canvasY = 0.0;
+  private float canvasPaneScroll = 0.;
+  private float codePaneScroll = 0.;
   boolean once = true;
-  private ArrayList<String> imagesInSketch;  // This is so that we can know what to remove when we exit this screen.
-
+  private ArrayList<String> imagesInSketch = new ArrayList<String>();  // This is so that we can know what to remove when we exit this screen.
+  private ArrayList<PImage> loadedImages = new ArrayList<PImage>();
+  private AtomicBoolean loading = new AtomicBoolean(true);
+  private AtomicInteger processAfterLoadingIndex = new AtomicInteger(0);
+  float textAreaZoom = 22.0;
   
+  // Canvas 
+  private float beginDragX = 0.;
+  private float beginDragY = 0.;
+  private float prevCanvasX = 0.;
+  private float prevCanvasY = 0.;
+  private boolean isDragging = false;
+  
+  
+  private String[] defaultCode = {
+    "public void start() {",
+    "  ",
+    "}",
+    "",
+    "public void run() {",
+    "  g.background(120, 100, 140);",
+    "  ",
+    "}"
+  };
+  
+
+  public Sketchpad(TWEngine engine, String path) {
+    this(engine);
+    
+    loadSketchieInSeperateThread(path);
+  }
   
   public Sketchpad(TWEngine engine) {
     super(engine);
@@ -23,48 +54,181 @@ public class Sketchpad extends Screen {
     gui = new SpriteSystemPlaceholder(engine, engine.APPPATH+engine.PATH_SPRITES_ATTRIB+"gui/test/");
     gui.interactable = false;
     
-    sprites = new SpriteSystemPlaceholder(engine, engine.APPPATH+engine.PATH_SPRITES_ATTRIB+"test/");
-    sprites.interactable = true;
-    ui.useSpriteSystem(sprites);
     
     canvas = createGraphics(int(WIDTH/2), int(HEIGHT), P2D);
     resetView();
     
     canvasY = myUpperBarWeight;
     
-    
-    
     plugin = plugins.createPlugin();
     plugin.sketchioGraphics = canvas;
     
+    input.keyboardMessage = "";
+    // Load default code into keyboardMessage
+    for (String s : defaultCode) {
+      input.keyboardMessage += s+"\n";
+    }
+    input.cursorX = input.keyboardMessage.length();
     
-    input.keyboardMessage = """
-public void start() {
-  print("Hello worlddd");
-}
+    
+//    input.keyboardMessage = """
 
-public void run() {
-  g.background(120, 100, 140);
-  sprite("app-3", "logo");
-  float y = app.sin(getTimeSeconds())*50.f;
-  moveSprite("app-3", 0, y);
-}
-  """;
+//public void start() {
+//  print("Hello worlddd");
+//}
+
+//public void run() {
+//  g.background(120, 100, 140);
+//  sprite("app-3", "logo");
+//  float y = app.sin(getTimeSeconds())*50.f;
+//  moveSprite("app-3", 0, y);
+//}
+//  """;
   
-    compileCode();
+    //compileCode(input.keyboardMessage);
   }
   
-  private void compileCode() {
-    final String code = input.keyboardMessage;
+  private void loadSketchieInSeperateThread(String path) {
+    loading.set(true);
+    processAfterLoadingIndex.set(0);
     Thread t1 = new Thread(new Runnable() {
       public void run() {
-          completeCompilation = false;
-          successful = plugin.compile(code);
-          completeCompilation = true;
-          once = true;
+        loadSketchie(path);
+        loading.set(false);
+      }
+    });
+    t1.start();
+  }
+  
+  // NOTE: there isn't an equivalent "saveSketchie" method because we don't have
+  // to save the whole thing:
+  // - sprite data is saved automatically by the sprite class
+  // - images... well, I don't think they need to be saved.
+  private void saveScripts() {
+    // Not gonna bother putting a TODO but you know that the script isn't going to stick to
+    // a keyboard forever.
+    String[] strs = new String[1];
+    strs[0] = input.keyboardMessage;
+    app.saveStrings(sketchiePath+"scripts/main.pde", strs);
+    
+    console.log("Saved.");
+  }
+  
+  private void loadSketchie(String path) {
+    imagesInSketch.clear();
+    loadedImages.clear();
+    processAfterLoadingIndex.set(0);
+    
+    // Undirectorify path
+    if (path.charAt(path.length()-1) == '/') {
+      path.substring(0, path.length()-1);
+      console.log(path);
+    }
+    
+    if (!file.getExt(path).equals(engine.SKETCHIO_EXTENSION) || !file.isDirectory(path)) {
+      console.warn("Not a valid sketchie file: "+path);
+      return;
+    }
+    
+    // Re-directorify path
+    path = file.directorify(path);
+    sketchiePath = path;
+    
+    // Load images
+    String imgPath = "";
+    if (file.exists(path+"imgs")) imgPath = path+"imgs";
+    if (file.exists(path+"img")) imgPath = path+"img";
+    
+    // Only if imgs folder exists
+    if (imgPath.length() > 0) {
+      // List out all the files, get each image.
+      File[] imgs = (new File(imgPath)).listFiles();
+      int numberImages = 0;
+      for (File f : imgs) {
+        if (f == null) continue;
+        
+        String pathToSingularImage = f.getAbsolutePath().replaceAll("\\\\", "/");
+        String name = file.getIsolatedFilename(pathToSingularImage);
+        
+        // Only load images
+        if (!file.isImage(pathToSingularImage)) {
+          continue;
+        }
+        
+        // Actual loading (you'll want to run loadSketchie in a seperate thread);
+        PImage img = loadImage(pathToSingularImage);
+        
+        
+        // Error checking
+        if (img == null) {
+          console.warn("Error while loading image "+name);
+          continue;
+        }
+        if (img.width <= 0 && img.height <= 0) {
+          console.warn("Error while loading image "+name);
+          continue;
+        }
+        
+        // To avoid race conditions, we need to put the images in a temp linked list
+        // Add to list so we know what to clear from memory once we're done.
+        imagesInSketch.add(name);
+        loadedImages.add(img);
+        numberImages++;
+      }
+      processAfterLoadingIndex.set(numberImages);
+    }
+    
+    
+    
+    // Next: load sprites. Not too hard.
+    String spritePath = "";
+    if (file.exists(path+"sprites")) spritePath = path+"sprites/";
+    if (file.exists(path+"sprite")) spritePath = path+"sprite/";
+    
+    // If sprites exist.
+    if (spritePath.length() > 0) {
+      // Load our new sprite system, EZ.
+      sprites = new SpriteSystemPlaceholder(engine, spritePath);
+      sprites.interactable = true;
+    }
+    
+    
+    // And now: script
+    
+    String scriptPath = "";
+    if (file.exists(path+"scripts")) scriptPath = path+"scripts/";
+    if (file.exists(path+"script")) scriptPath = path+"script/";
+    // If scripts exist.
+    if (scriptPath.length() > 0) {
+      File[] scripts = (new File(scriptPath)).listFiles();
+      for (File f : scripts) {
+        String scriptAbsolutePath = f.getAbsolutePath();
+        
+        if (file.getExt(scriptAbsolutePath).equals("pde")) {
+          String[] lines = app.loadStrings(scriptAbsolutePath);
+          input.keyboardMessage = "";
+          for (String s : lines) {
+            input.keyboardMessage += s+"\n";
+          }
+          input.cursorX = input.keyboardMessage.length();
+          
+          // Big TODO here: we're just gonna load one script for now
+          // until I get things working.
+          break;
         }
       }
-    );
+    }
+  }
+  
+  private void compileCode(String code) {
+    Thread t1 = new Thread(new Runnable() {
+      public void run() {
+        compiling = true;
+        successful = plugin.compile(code);
+        compiling = false;
+        once = true;
+      }
+    });
     t1.start();
   }
   
@@ -72,11 +236,18 @@ public void run() {
     canvasX = canvas.width*canvasScale*0.5;
     canvasY = canvas.height*canvasScale*0.5;
     canvasScale = 1.0;
-    input.scrollOffset = -1000.;
+    // Only reset view if the mouse is in the canvas pane
+    if (engine.mouseX() < middle()) {
+      canvasPaneScroll = -1000.;
+    }
+    else {
+      input.scrollOffset = -1000.;
+    }
+    
   }
   
   private void runCode() {
-    if (completeCompilation && once) {
+    if (!compiling && once) {
       once = false;
       if (!successful) {
         console.log(plugin.errorOutput);
@@ -86,9 +257,9 @@ public void run() {
       }
     }
     ui.useSpriteSystem(sprites);
-    if (successful && completeCompilation) {
+    if (successful && !compiling) {
       canvas.beginDraw();
-      canvas.background(210);
+      canvas.fill(255, 255);
       display.setPGraphics(canvas);
       plugin.run();
       canvas.endDraw();
@@ -97,20 +268,40 @@ public void run() {
     sprites.updateSpriteSystem();
   }
   
-  float beginDragX = 0.;
-  float beginDragY = 0.;
-  float prevCanvasX = 0.;
-  float prevCanvasY = 0.;
-  boolean isDragging = false;
+  // Creating this funciton because I think the width of
+  // canvas v the code editor will likely change later
+  // and i wanna maintain good code.
+  private float middle() {
+    return WIDTH/2;
+  }
+  
+  boolean inCanvasPane = false;
+  
   private void displayCanvas() {
     if (input.altDown && input.shiftDown && input.keys[int('s')] == 2) {
       input.backspace();
       resetView();
     }
     
-    input.processScroll(100., 2500.);
-    canvasScale = (-input.scrollOffset)/1000.;
-    if (engine.mouseX() < WIDTH/2 && sprites.selectedSprite == null) {
+    // Difficulty: we have 2 scroll areas: canvas zoom, and code editor.
+    // if mouse is in canvas pane
+    boolean canvasPane = engine.mouseX() < middle();
+    if (canvasPane) {
+      if (!inCanvasPane) {
+        inCanvasPane = true;
+        // We need to switch to our scroll value for the zoom
+        codePaneScroll   = input.scrollOffset;     // Update code pane
+        input.scrollOffset = canvasPaneScroll;
+      }
+      input.processScroll(100., 2500.);
+    }
+    
+    float scroll = input.scrollOffset;
+    if (!canvasPane) {
+      scroll = canvasPaneScroll;
+    }
+    canvasScale = (-scroll)/1000.;
+    if (engine.mouseX() < middle() && sprites.selectedSprite == null) {
       if (input.primaryDown && !isDragging) {
         beginDragX = engine.mouseX();
         beginDragY = engine.mouseY();
@@ -136,16 +327,128 @@ public void run() {
     app.image(canvas, xx, yy, canvas.width*canvasScale, canvas.height*canvasScale);
   }
   
+  // Ancient code copied from Timeway it aint my fault pls believe me.
+  private int countNewlines(String t) {
+      int count = 0;
+      for (int i = 0; i < t.length(); i++) {
+          if (t.charAt(i) == '\n') {
+              count++;
+          }
+      }
+      return count;
+  }
   
-  public void content() {
-    power.setAwake();
-    runCode();
-    displayCanvas();
+  private float getTextHeight(String txt) {
+    float lineSpacing = 8;
+    return ((app.textAscent()+app.textDescent()+lineSpacing)*float(countNewlines(txt)+1));
+  }
+  
+  private void displayCodeEditor() {
+    // Update scroll for code pane
+    boolean inCodePane = engine.mouseX() >= middle();
+    if (inCodePane) {
+      if (inCanvasPane) {
+        inCanvasPane = false;
+        // We need to switch to our scroll value for the code scroll
+        canvasPaneScroll   = input.scrollOffset;     
+        input.scrollOffset = codePaneScroll;
+      }
+      
+      input.processScroll(0., max(getTextHeight(input.keyboardMessage)-(HEIGHT-myUpperBarWeight-myLowerBarWeight), 0));
+    }
+    
+    // ctrl+s save keystroke
+    // Really got to fix this input.keys flaw thing.
+    if (input.ctrlDown && input.keys[int('s')] == 2) {
+      saveScripts();
+    }
     
     input.addNewlineWhenEnterPressed = true;
     engine.allowShowCommandPrompt = false;
-    ui.displayTextArea(WIDTH/2, myUpperBarWeight, WIDTH/2, HEIGHT-myUpperBarWeight-myLowerBarWeight);
+    
+    // Used to be a function in engine, moved it to here because complications with
+    // scroll, don't care.
+    float x = middle();
+    float y = myUpperBarWeight;
+    float wi = WIDTH-middle(); 
+    float hi = HEIGHT-myUpperBarWeight-myLowerBarWeight;
+    
+    
+    // TODO: I really wanna use our shaders to reduce shader-switching
+    // instead of processing's shaders.
+    app.resetShader();
+    // Draw background
+    app.fill(60);
+    app.noStroke();
+    app.rect(x, y, wi, hi);
+    
+    
+    if (input.altDown && input.keys[int('=')] == 2) {
+      textAreaZoom += 2.;
+      input.backspace();
+    }
+    if (input.altDown && input.keys[int('-')] == 2) {
+      textAreaZoom -= 2.;
+      input.backspace();
+    }
+    
+    // Scroll slightly when some y added t text.
+    if (input.enterOnce) {
+      if (getTextHeight(input.keyboardMessage) > (HEIGHT-myUpperBarWeight-myLowerBarWeight) && inCodePane) {
+        input.scrollOffset -= (textAreaZoom);  // Literally just a random char
+      }
+    }
+    
+    x += 5;
+    y += 5;
+      
+    app.fill(255);
+    app.textAlign(LEFT, TOP);
+    app.textFont(display.getFont("Source Code"), textAreaZoom);
+    app.textLeading(textAreaZoom);
+    
+    float scroll = input.scrollOffset;
+    if (!inCodePane) {
+      scroll = codePaneScroll;
+    }
+    app.text(input.keyboardMessageDisplay(), x, y+scroll);
   }
+  
+  public void content() {
+    power.setAwake();
+    
+    if (!loading.get()) {
+      if (processAfterLoadingIndex.get() > 0) {
+        int i = processAfterLoadingIndex.decrementAndGet();
+        
+        
+        // Create large image, I don't want the lag
+        // TODO: option to select large image or normal pimage.
+        LargeImage largeimg = display.createLargeImage(loadedImages.get(i));
+        
+        
+        // Add to systemimages so we can use it in our sprites
+        display.systemImages.put(imagesInSketch.get(i), new DImage(largeimg, loadedImages.get(i)));
+        
+        if (i == 0) {
+          compileCode(input.keyboardMessage);
+        }
+      }
+      
+      runCode();
+      displayCanvas();
+      displayCodeEditor();
+    }
+    else {
+      
+      ui.loadingIcon(WIDTH/4, HEIGHT/2);
+      app.textFont(engine.DEFAULT_FONT, 32);
+      app.fill(255);
+      app.textAlign(CENTER, TOP);
+      app.text("Loading...", WIDTH/4, HEIGHT/2+128);
+    }
+  }
+  
   
   public void upperBar() {
     display.shader("fabric", "color", 0.43,0.4,0.42,1., "intensity", 0.1);
@@ -153,10 +456,15 @@ public void run() {
     app.resetShader();
     ui.useSpriteSystem(gui);
     if (ui.button("compile_button", "media_128", "Compile")) {
-      compileCode();
+      compileCode(input.keyboardMessage);
     }
     
-    if (!completeCompilation) {
+    if (ui.button("back_button", "back_arrow_128", "Explorer")) {
+      saveScripts();
+      previousScreen();
+    }
+    
+    if (compiling) {
       ui.loadingIcon(WIDTH-myUpperBarWeight/2-10, myUpperBarWeight/2, myUpperBarWeight);
     }
     gui.updateSpriteSystem();
@@ -170,7 +478,7 @@ public void run() {
   
   
   public void finalize() {
-    free();
+    //free();
   }
   
   public void free() {

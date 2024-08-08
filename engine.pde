@@ -46,9 +46,9 @@ import java.util.Arrays;   // Used by the stack class at the bottom
 public class TWEngine {
   //*****************CONSTANTS SETTINGS**************************
   // Info and versioning
-  public static final String APP_NAME        = "SketchIO";
+  public static final String APP_NAME        = "Timeway";
   public static final String AUTHOR      = "Teo Taylor";
-  public static final String VERSION     = "0.1.3-alpha";
+  public static final String VERSION     = "0.1.3";
   public static final String VERSION_DESCRIPTION = 
     "- Added previews to entries in pixel realm\n"+
     "- Performance improvements\n"+
@@ -95,7 +95,8 @@ public class TWEngine {
   public       String DEFAULT_DIR;
   public       String DEFAULT_FONT_NAME = "Typewriter";
 
-
+  
+  public final String SKETCHIO_EXTENSION = "sketchio";
   public final String ENTRY_EXTENSION = "timewayentry";
   public final String[] SHORTCUT_EXTENSION = {"timewayshortcut"};
 
@@ -340,6 +341,7 @@ public class TWEngine {
         defaultSettings.putIfAbsent("enableExperimentalGifs", false);
         defaultSettings.putIfAbsent("cache_miss_no_music", true);
         defaultSettings.putIfAbsent("touch_controls", false);
+        defaultSettings.putIfAbsent("text_cursor_char", "_");
     
         defaultKeybindings = new HashMap<String, Character>();
         defaultKeybindings.putIfAbsent("CONFIG_VERSION", char(1));
@@ -1420,6 +1422,11 @@ public class TWEngine {
     public void initShader(String name) {
       PShaderEntry sh = shaders.get(name);
       
+      if (sh == null) {
+        console.warnOnce("Shader "+name+" not found!");
+        return;
+      }
+      
       // Switch to the shader to force it to compile:
       if (!sh.compiled) {
         try {
@@ -1447,11 +1454,13 @@ public class TWEngine {
     }
     
     public PShader getShaderWithParams(String shaderName, Object... uniforms) {
-      PShader sh = shaders.get(shaderName).shader;
-      if (sh == null) {
-        console.warnOnce("Shader "+shaderName+" not found!");
+      PShaderEntry shentry = shaders.get(shaderName);
+      if (shentry == null) {
+        console.warn("Shader "+shaderName+" not found!");
         return errShader;
       }
+      PShader sh = shentry.shader;
+      
       if (!shaders.get(shaderName).success) return errShader;
       int l = uniforms.length;
       
@@ -1529,10 +1538,21 @@ public class TWEngine {
         console.warnOnce("Corrupted image.");
         return;
       }
+      
+      //console.log(image.width + " " + image.height + " " + image.mode);
+      
       // If image is loaded render.
       if (image.width > 0 && image.height > 0) {
         if (image.mode == 1) {
-          currentPG.image(image.pimage, x, y, w, h);
+          // For some reason an occasional exception occures here
+          try {
+            currentPG.image(image.pimage, x, y, w, h);
+          }
+          catch (IndexOutOfBoundsException e) {
+            // Doesn't matter if we don't render an image for one frame
+            // if a serious error occures
+            return;
+          }
         }
         else if (image.mode == 2) {
           largeImg(currentPG, image.largeImage, x, y, w, h);
@@ -2292,37 +2312,6 @@ public class TWEngine {
       return (currMinimenu != null);
     }
     
-    float textAreaZoom = 22.0;
-    
-    public void displayTextArea(float x, float y, float wi, float hi) {
-      // TODO: I really wanna use our shaders to reduce shader-switching
-      // instead of processing's shaders.
-      app.resetShader();
-      // Draw background
-      app.fill(60);
-      app.noStroke();
-      app.rect(x, y, wi, hi);
-      
-      
-      if (input.altDown && input.keys[int('=')] == 2) {
-        textAreaZoom += 2.;
-        input.backspace();
-      }
-      if (input.altDown && input.keys[int('-')] == 2) {
-        textAreaZoom -= 2.;
-        input.backspace();
-      }
-      
-      x += 5;
-      y += 5;
-        
-      app.fill(255);
-      app.textAlign(LEFT, TOP);
-      app.textFont(display.getFont("Source Code"), textAreaZoom);
-      app.textLeading(textAreaZoom);
-      app.text(input.keyboardMessageDisplay(), x, y/*, wi-10, hi-10*/);
-      
-    }
   }
 
 
@@ -4018,6 +4007,9 @@ public class TWEngine {
       if (ext.equals(ENTRY_EXTENSION)) {
         twengineRequestEditor(filePath);
       }
+      else if (ext.equals(SKETCHIO_EXTENSION)) {
+        twengineRequestSketch(filePath);
+      }
   
       // Anything else which is opened by a windows app or something.
       // TODO: use xdg-open in linux.
@@ -4029,7 +4021,10 @@ public class TWEngine {
   
     public void open(DisplayableFile file) {
       String path = file.path;
-      if (file.isDirectory()) {
+      if (getExt(path).equals(SKETCHIO_EXTENSION)) {
+        twengineRequestSketch(path);
+      }
+      else if (file.isDirectory()) {
         openDirInNewThread(path);
       } else {
         desktopOpen(path);
@@ -4436,6 +4431,9 @@ public class TWEngine {
       // Call this to run a cycle of the plugin.
       void run() {
         if (compiled && pluginRunPoint != null && pluginIntance != null) {
+          // TODO: extra protection
+          // e.g. saving from infinite loops, block from running until resolved,
+          // etc.
           try {
             pluginRunPoint.invoke(pluginIntance);
           }
@@ -4797,7 +4795,7 @@ public class TWEngine {
   public String lastInput = "";
 
   public void beginInputPrompt(String prompt, Runnable doWhenSubmitted) {
-    input.keyboardMessage = "";
+    input.prepareTyping();
     inputPromptShown = true;
     input.addNewlineWhenEnterPressed = false;
     promptText = prompt;
@@ -4810,6 +4808,7 @@ public class TWEngine {
       if (input.upOnce) {
         if (lastInput.length() > 0) {
           input.keyboardMessage = lastInput;
+          input.cursorX = input.keyboardMessage.length();
         }
       }
       
@@ -4844,7 +4843,7 @@ public class TWEngine {
       app.textFont(DEFAULT_FONT, 60);
       app.text(promptText, display.WIDTH/2, display.HEIGHT/2-100);
       app.textSize(30);
-      app.text(input.keyboardMessage, display.WIDTH/2, display.HEIGHT/2);
+      app.text(input.keyboardMessageDisplay(), display.WIDTH/2, display.HEIGHT/2);
     }
   }
 
@@ -5255,6 +5254,7 @@ public class TWEngine {
 
     beginInputPrompt("Enter command", r);
     input.keyboardMessage = "/";
+    input.cursorX = input.keyboardMessage.length();
   }
 
   private boolean commandEquals(String input, String expected) {
@@ -6479,6 +6479,9 @@ public class TWEngine {
     public boolean keyOnce = false;
     public boolean keyDown = false;
     
+    public int cursorX = 0;
+    public String CURSOR_CHAR = "";
+    
     public boolean mouseMoved = false;
     
     public float   rawScroll = 0;
@@ -6502,8 +6505,6 @@ public class TWEngine {
     private float cache_mouseX = 0.0;
     private float cache_mouseY = 0.0;
     public  float scrollOffset = 0.0;
-    private int cursorX = 0;
-    private int cursorY = 0;
     private float blinkTime = 0.0;
     
     public int keys[]       = new int[1024];
@@ -6545,6 +6546,7 @@ public class TWEngine {
     
     public InputModule() {
       scrollSensitivity = settings.getFloat("scrollSensitivity");
+      CURSOR_CHAR = settings.getString("text_cursor_char");
     }
     
       
@@ -6669,9 +6671,20 @@ public class TWEngine {
       
       if (leftOnce) { 
         cursorX--;
+        if (ctrlDown) {
+          while (ctrlTraversable()) {
+            cursorX--;
+          }
+          cursorX++;
+        }
       }
       else if (rightOnce) {
         cursorX++;
+        if (ctrlDown) {
+          while (ctrlTraversable()) {
+            cursorX++;
+          }
+        }
       }
       else if (upOnce) { 
         // Start of current line
@@ -6728,6 +6741,24 @@ public class TWEngine {
       rawScroll = 0.;
     }
     
+    
+    public void prepareTyping() {
+      keyboardMessage = "";
+      cursorX = 0;
+    }
+    
+    private boolean ctrlTraversable() {
+      if (cursorX >= keyboardMessage.length()-1 || cursorX <= 0 ) return false;
+      char c = keyboardMessage.charAt(cursorX);
+      return c != ' '
+          && c != '\n'
+          && c != '('
+          && c != ')'
+          && c != '{'
+          && c != '}'
+          && c != '['
+          && c != ']';
+    }
   
     // To be called by base sketch code.
     public void releaseKeyboardAction(char kkey, int kkeyCode) {
@@ -6781,11 +6812,15 @@ public class TWEngine {
         // But we do NOT want it to replace \n since this will remove the newline and make
         // the text all wonky.
         // Also ignore all the min(), I don't want to get a StringIndexOutOfBoundsException.
-        if (keyboardMessage.charAt(min(cursorX, keyboardMessage.length()-1)) == '\n') {
-          return keyboardMessage.substring(0, cursorX)+"█"+keyboardMessage.substring(min(cursorX, keyboardMessage.length()-1));
+        int l = keyboardMessage.length();
+        if (l == 0) return CURSOR_CHAR;
+        
+        
+        if (keyboardMessage.charAt(min(cursorX, l-1)) == '\n') {
+          return keyboardMessage.substring(0, min(cursorX, l))+CURSOR_CHAR+keyboardMessage.substring(min(cursorX, l-1));
         }
         else {
-          return keyboardMessage.substring(0, cursorX)+"█"+keyboardMessage.substring(min(cursorX+1, keyboardMessage.length()));
+          return keyboardMessage.substring(0, min(cursorX, l))+CURSOR_CHAR+keyboardMessage.substring(min(cursorX+1, l));
         }
       }
       return keyboardMessage;
@@ -6846,10 +6881,7 @@ public class TWEngine {
     }
   
     public void backspace() {
-      if (this.keyboardMessage.length() > 0 && cursorX > 0) {
-        if (keyboardMessage.charAt(cursorX-1) == '\n')
-          cursorY--;
-        cursorY = max(cursorY, 0);
+      if (this.keyboardMessage.length() > 0 && cursorX > 0)  {
         this.keyboardMessage = keyboardMessage.substring(0, cursorX-1)+keyboardMessage.substring(cursorX);
         cursorX--;
       }
@@ -7001,9 +7033,6 @@ public class TWEngine {
         this.keyboardMessage = keyboardMessage.substring(0, cursorX) + c + keyboardMessage.substring(cursorX);
       }
       cursorX++;
-      if (c == '\n') {
-        cursorY++;
-      }
     }
   }
   // Cus why replace 9999999 lines of code when you can write 6 new lines of code that makes sure everything still works.
@@ -7118,6 +7147,10 @@ public class TWEngine {
   // TODO: Move requestScreen from Screen class to engine.
   public void requestScreen(Screen screen) {
     if (currScreen != null) currScreen.requestScreen(screen);
+  }
+  
+  public void previousScreen() {
+    if (currScreen != null) currScreen.previousScreen();
   }
 
   // The core engine function which essentially runs EVERYTHING in Timeway.
@@ -8467,6 +8500,8 @@ public final class SpriteSystemPlaceholder {
               if (!s.isLocked()) {
                   if (s.allowResizing) {
                       s.resizeSquare();
+                      // Bug fix: reset fill
+                      engine.display.currentPG.fill(255, 255);
                   }
                   s.dragReposition();
               }
