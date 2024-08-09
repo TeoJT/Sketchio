@@ -46,7 +46,7 @@ import java.util.Arrays;   // Used by the stack class at the bottom
 public class TWEngine {
   //*****************CONSTANTS SETTINGS**************************
   // Info and versioning
-  public static final String APP_NAME        = "Timeway";
+  public static final String APP_NAME        = "Sketchio";
   public static final String AUTHOR      = "Teo Taylor";
   public static final String VERSION     = "0.1.3";
   public static final String VERSION_DESCRIPTION = 
@@ -483,9 +483,7 @@ public class TWEngine {
     private boolean forcePowerModeEnabled = false;
     private PowerMode forcedPowerMode = PowerMode.HIGH;
     private PowerMode powerModeBefore = PowerMode.NORMAL;
-    
-    final float BASE_FRAMERATE = 60;
-    float targetFramerate = 60;
+    public boolean allowMinimizedMode = true;
   
     // The score that seperates the stable fps from the unstable fps.
     // If you've got half a brain, it would make the most sense to keep it at 0.
@@ -711,15 +709,15 @@ public class TWEngine {
       // Go into 1fps mode
   
       // If the window is not focussed, don't even bother doing anything lol.
-  
-      if (focused) {
+      
+      if (app.focused) {
         if (!focusedMode) {
           setPowerMode(prevPowerMode);
           focusedMode = true;
           putFPSSystemIntoGraceMode();
           sound.setNormalVolume();
         }
-      } else {
+      } else if (allowMinimizedMode) {
         if (focusedMode) {
           prevPowerMode = powerMode;
           setPowerMode(PowerMode.MINIMAL);

@@ -1,0 +1,17 @@
+{
+  "h": 128,
+  "vy0": 680,
+  "vx1": 1190,
+  "vy2": 808,
+  "vx0": 1062,
+  "vy1": 680,
+  "mode": "SINGLE",
+  "vx3": 1062,
+  "vx2": 1190,
+  "vy3": 808,
+  "w": 128,
+  "name": "renderinginfoscreen-cancel",
+  "x": 1062,
+  "y": 680,
+  "locked": false
+}

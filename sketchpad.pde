@@ -1,9 +1,14 @@
+import javax.swing.*;
+import javax.swing.border.EmptyBorder;
+import javax.swing.filechooser.FileSystemView;
+
 
 
 
 public class Sketchpad extends Screen {
   private String sketchiePath = "";
   private TWEngine.PluginModule.Plugin plugin;
+  private FFmpegEngine ffmpeg;
   private String code = "";
   private boolean compiling = false;
   private boolean successful = false;
@@ -24,6 +29,15 @@ public class Sketchpad extends Screen {
   private boolean configMenu = false;
   private boolean renderMenu = false;
   private int canvasSmooth = 1;
+  private String renderFormat = "MPEG-4";
+  private float upscalePixels = 1.;
+  private boolean rendering = false;
+  private boolean converting = false;
+  private int timeBeforeStartingRender = 0;
+  private PGraphics shaderCanvas;
+  private PGraphics scaleCanvas;
+  private int renderFrameCount = 0;
+  private float renderFramerate = 0.;
   
   private boolean playing = false;
   private boolean loop = false;
@@ -78,22 +92,7 @@ public class Sketchpad extends Screen {
     }
     input.cursorX = input.keyboardMessage.length();
     
-    
-//    input.keyboardMessage = """
-
-//public void start() {
-//  print("Hello worlddd");
-//}
-
-//public void run() {
-//  g.background(120, 100, 140);
-//  sprite("app-3", "logo");
-//  float y = app.sin(getTimeSeconds())*50.f;
-//  moveSprite("app-3", 0, y);
-//}
-//  """;
-  
-    //compileCode(input.keyboardMessage);
+    ffmpeg = new FFmpegEngine();
   }
   
   private void createCanvas(int wi, int hi, int smooth) {
@@ -141,6 +140,41 @@ public class Sketchpad extends Screen {
     json.setFloat("time_length", timeLength);
     
     app.saveJSONObject(json, sketchiePath+"sketch_config.json");
+  }
+  
+  // TODO: only loads one script
+  private String loadScript() {
+    String scriptPath = "";
+    String ccode = "";
+    if (file.exists(sketchiePath+"scripts")) scriptPath = sketchiePath+"scripts/";
+    if (file.exists(sketchiePath+"script")) scriptPath = sketchiePath+"script/";
+    // If scripts exist.
+    if (scriptPath.length() > 0) {
+      File[] scripts = (new File(scriptPath)).listFiles();
+      for (File f : scripts) {
+        String scriptAbsolutePath = f.getAbsolutePath();
+        
+        if (file.getExt(scriptAbsolutePath).equals("pde")) {
+          String[] lines = app.loadStrings(scriptAbsolutePath);
+          ccode = "";
+          for (String s : lines) {
+            ccode += s+"\n";
+          }
+          
+          
+          // Big TODO here: we're just gonna load one script for now
+          // until I get things working.
+          break;
+        }
+      }
+    }
+    else {
+      // Script doesn't exist: return default code instead
+      for (String s : defaultCode) {
+        ccode += s+"\n";
+      }
+    }
+    return ccode;
   }
   
   private JSONObject loadedJSON = null;
@@ -225,29 +259,8 @@ public class Sketchpad extends Screen {
     
     // And now: script
     
-    String scriptPath = "";
-    if (file.exists(path+"scripts")) scriptPath = path+"scripts/";
-    if (file.exists(path+"script")) scriptPath = path+"script/";
-    // If scripts exist.
-    if (scriptPath.length() > 0) {
-      File[] scripts = (new File(scriptPath)).listFiles();
-      for (File f : scripts) {
-        String scriptAbsolutePath = f.getAbsolutePath();
-        
-        if (file.getExt(scriptAbsolutePath).equals("pde")) {
-          String[] lines = app.loadStrings(scriptAbsolutePath);
-          input.keyboardMessage = "";
-          for (String s : lines) {
-            input.keyboardMessage += s+"\n";
-          }
-          input.cursorX = input.keyboardMessage.length();
-          
-          // Big TODO here: we're just gonna load one script for now
-          // until I get things working.
-          break;
-        }
-      }
-    }
+    input.keyboardMessage = loadScript();
+    input.cursorX = input.keyboardMessage.length();
     
     // Load sketch config
     if (file.exists(path+"sketch_config.json")) {
@@ -257,13 +270,20 @@ public class Sketchpad extends Screen {
     
   }
   
-  // for use by the API
+  // methods for use by the API
   public float getTime() {
     return time;
   }
   
+  public float getDelta() {
+    // When we're rendering, all the file IO and expensive rendering operations will
+    // inevitably make the actual framerate WAY lower than what we're aiming for and therefore
+    if (rendering) return display.BASE_FRAMERATE/renderFramerate;
+    else return display.getDelta();
+  }
+  
   private boolean menuShown() {
-    return configMenu || renderMenu;
+    return configMenu || renderMenu || rendering;
   }
   
   private void compileCode(String code) {
@@ -322,12 +342,69 @@ public class Sketchpad extends Screen {
     sprites.updateSpriteSystem();
     display.setPGraphics(app.g);
     
+    // This is simply to allow a few frames for the UI to disappear for user feedback.
+    // We skip rendering if true here.
+    if (rendering && timeBeforeStartingRender > 0) {
+      timeBeforeStartingRender--;
+      if (timeBeforeStartingRender == 3) {
+        // Delete all files that may be in this folder
+        File[] leftoverFiles = (new File(engine.APPPATH+"frames/")).listFiles();
+        if (leftoverFiles != null) {
+          for (File ff : leftoverFiles) {
+            ff.delete();
+          }
+        }
+      }
+      time = 0.;
+      return;
+    }
+    
+    // The actual part where we render our animation
+    if (rendering && !converting && successful && !compiling) {
+      // This path has already been created so it will DEFO work
+      String frame = engine.APPPATH+"frames/"+nf(renderFrameCount++, 6, 0)+".tiff";
+      
+      // Do shader stuff (TODO later)
+      // And another TODO: optimise, if we don't have any shaders,
+      // save directly from canvas instead (big performance saves!)
+      shaderCanvas.beginDraw();
+      shaderCanvas.clear();
+      shaderCanvas.image(canvas, 0, 0, shaderCanvas.width, shaderCanvas.height);
+      shaderCanvas.endDraw();
+      
+      // Do scaling (yay)
+      // But if we don't have scaling enabled skip this step, will save performance and time.
+      if (upscalePixels != 1) {
+        scaleCanvas.beginDraw();
+        scaleCanvas.clear();
+        scaleCanvas.image(shaderCanvas, 0, 0, scaleCanvas.width, scaleCanvas.height);
+        scaleCanvas.endDraw();
+        scaleCanvas.save(frame);
+      }
+      else {
+        // If scaling is disabled, then shading canvas already has everything we need.
+        shaderCanvas.save(frame);
+      }
+      
+    }
+    
     // Update time
     if (playing) {
-      time += display.getDelta();
+      time += getDelta();
+      
+      // When we reach the end of the animation
       if (time > timeLength) {
-        if (!loop) playing = false;
-        else time = 0.;
+        if (rendering) {
+          playing = false;
+          beginConversion();
+          
+          // TODO: open output file
+        }
+        else {
+          // Restart if looping, stop playing if not
+          if (!loop) playing = false;
+          else time = 0.;
+        }
       }
     }
   }
@@ -364,7 +441,8 @@ public class Sketchpad extends Screen {
     if (!canvasPane) {
       scroll = canvasPaneScroll;
     }
-    canvasScale = (-scroll)/1000.;
+    // Scroll is negative
+    canvasScale = (2500.+scroll)/1000.;
     
     
     if (canvasPane && sprites.selectedSprite == null && input.mouseY() < HEIGHT-myLowerBarWeight && input.mouseY() > myUpperBarWeight) {
@@ -410,8 +488,6 @@ public class Sketchpad extends Screen {
   }
   
   private void displayCodeEditor() {
-    if (!menuShown()) code = input.keyboardMessage;
-    
     // Update scroll for code pane
     boolean inCodePane = input.mouseX() >= middle();
     if (inCodePane) {
@@ -425,15 +501,7 @@ public class Sketchpad extends Screen {
       input.processScroll(0., max(getTextHeight(code)-(HEIGHT-myUpperBarWeight-myLowerBarWeight), 0));
     }
     
-    // ctrl+s save keystroke
-    // Really got to fix this input.keys flaw thing.
-    if (input.ctrlDown && input.keys[int('s')] == 2) {
-      saveScripts();
-    }
-    
-    input.addNewlineWhenEnterPressed = true;
-    engine.allowShowCommandPrompt = false;
-    
+    // Positioning of the text variables
     // Used to be a function in engine, moved it to here because complications with
     // scroll, don't care.
     float x = middle();
@@ -450,41 +518,67 @@ public class Sketchpad extends Screen {
     app.noStroke();
     app.rect(x, y, wi, hi);
     
-    
-    if (input.altDown && input.keys[int('=')] == 2) {
-      textAreaZoom += 2.;
-      input.backspace();
+    if (rendering) {
+      // Use the same panel (code editor) for the rendering info.
     }
-    if (input.altDown && input.keys[int('-')] == 2) {
-      textAreaZoom -= 2.;
-      input.backspace();
-    }
-    
-    // Scroll slightly when some y added t text.
-    if (input.enterOnce) {
-      if (getTextHeight(code) > (HEIGHT-myUpperBarWeight-myLowerBarWeight) && inCodePane) {
-        input.scrollOffset -= (textAreaZoom);  // Literally just a random char
-      }
-    }
-    
-    x += 5;
-    y += 5;
-      
-    app.fill(255);
-    app.textAlign(LEFT, TOP);
-    app.textFont(display.getFont("Source Code"), textAreaZoom);
-    app.textLeading(textAreaZoom);
-    
-    float scroll = input.scrollOffset;
-    if (!inCodePane) {
-      scroll = codePaneScroll;
-    }
-    
-    if (!menuShown()) {
-      app.text(input.keyboardMessageDisplay(code), x, y+scroll);
-    }
+    // All of this is y'know... the actual code editor.
     else {
-      app.text(code, x, y+scroll);
+      // make sure code string is sync'd with keyboardmessage
+      if (!menuShown()) code = input.keyboardMessage;
+      
+      
+      // ctrl+s save keystroke
+      // Really got to fix this input.keys flaw thing.
+      if (input.ctrlDown && input.keys[int('s')] == 2) {
+        saveScripts();
+      }
+      
+      // Set engine typing settings.
+      input.addNewlineWhenEnterPressed = true;
+      engine.allowShowCommandPrompt = false;
+      
+      
+      // Zoom in/out keys
+      if (input.altDown && input.keys[int('=')] == 2) {
+        textAreaZoom += 2.;
+        input.backspace();
+      }
+      if (input.altDown && input.keys[int('-')] == 2) {
+        textAreaZoom -= 2.;
+        input.backspace();
+      }
+      
+      // Scroll slightly when some y added to text.
+      if (input.enterOnce) {
+        if (getTextHeight(code) > (HEIGHT-myUpperBarWeight-myLowerBarWeight) && inCodePane) {
+          input.scrollOffset -= (textAreaZoom);  // Literally just a random char
+        }
+      }
+      
+      // Slight position offset
+      x += 5;
+      y += 5;
+        
+      // Prepare font
+      app.fill(255);
+      app.textAlign(LEFT, TOP);
+      app.textFont(display.getFont("Source Code"), textAreaZoom);
+      app.textLeading(textAreaZoom);
+      
+      // Scrolling (make sure to keep in account the whole mouse-in-left-or-right pane thing
+      // (god my code is so messy)
+      float scroll = input.scrollOffset;
+      if (!inCodePane) {
+        scroll = codePaneScroll;
+      }
+      
+      // Display text
+      if (!menuShown()) {
+        app.text(input.keyboardMessageDisplay(code), x, y+scroll);
+      }
+      else {
+        app.text(code, x, y+scroll);
+      }
     }
   }
   
@@ -647,57 +741,74 @@ public class Sketchpad extends Screen {
       
       framerateField.display();
       
-      String compressionDisp = "Compression: ";
+      String compressionDisp = "Compression: "+renderFormat;
       
       if (textSprite("render-compression", compressionDisp) && !ui.miniMenuShown()) {
         String[] labels = new String[6];
         Runnable[] actions = new Runnable[6];
         
         labels[0] = "MPEG-4";
-        actions[0] = new Runnable() {public void run() {  }};
+        actions[0] = new Runnable() {public void run() { renderFormat = labels[0]; }};
         
         labels[1] = "MPEG-4 (Lossless 4:2:0)";
-        actions[1] = new Runnable() {public void run() {  }};
+        actions[1] = new Runnable() {public void run() { renderFormat = labels[1]; }};
         
         labels[2] = "MPEG-4 (Lossless (4:4:4)";
-        actions[2] = new Runnable() {public void run() {  }};
+        actions[2] = new Runnable() {public void run() { renderFormat = labels[2]; }};
         
         labels[3] = "Apple ProRes 4444";
-        actions[3] = new Runnable() {public void run() {  }};
+        actions[3] = new Runnable() {public void run() { renderFormat = labels[3]; }};
         
         labels[4] = "Animated GIF";
-        actions[4] = new Runnable() {public void run() {  }};
+        actions[4] = new Runnable() {public void run() { renderFormat = labels[4]; }};
         
         labels[5] = "Animated GIF (loop)";
-        actions[5] = new Runnable() {public void run() {  }};
+        actions[5] = new Runnable() {public void run() { renderFormat = labels[5]; }};
         
         ui.createOptionsMenu(labels, actions);
       }
       
-      String upscaleDisp = "Pixel upscale: ";
+      
+      String upscaleDisp = "Pixel upscale: "+int(upscalePixels*100.)+"% "+(upscalePixels == 1. ? "(None)" : "");
+      
       if (textSprite("render-upscale", upscaleDisp) && !ui.miniMenuShown()) {
         String[] labels = new String[6];
         Runnable[] actions = new Runnable[6];
         
-        labels[0] = "x1 (None)";
-        actions[0] = new Runnable() {public void run() {  }};
+        labels[0] = "25%";
+        actions[0] = new Runnable() {public void run() { upscalePixels = 0.25; }};
         
-        labels[1] = "x2";
-        actions[1] = new Runnable() {public void run() {  }};
+        labels[1] = "50%";
+        actions[1] = new Runnable() {public void run() { upscalePixels = 0.5; }};
         
-        labels[2] = "x3";
-        actions[2] = new Runnable() {public void run() {  }};
+        labels[2] = "100% (None)";
+        actions[2] = new Runnable() {public void run() { upscalePixels = 1.; }};
         
-        labels[3] = "x4";
-        actions[3] = new Runnable() {public void run() {  }};
+        labels[3] = "200%";
+        actions[3] = new Runnable() {public void run() { upscalePixels = 2.; }};
         
-        labels[4] = "x5";
-        actions[4] = new Runnable() {public void run() {  }};
+        labels[4] = "300%";
+        actions[4] = new Runnable() {public void run() { upscalePixels = 3.; }};
         
-        labels[5] = "x6";
-        actions[5] = new Runnable() {public void run() {  }};
+        labels[5] = "400%";
+        actions[5] = new Runnable() {public void run() { upscalePixels = 4.; }};
         
         ui.createOptionsMenu(labels, actions);
+      }
+      
+      
+      if (ui.button("render-ok", "tick_128", "Start rendering")) {
+        try {
+          renderFramerate = Float.parseFloat(framerateField.value);
+        }
+        catch (NumberFormatException e) {
+          console.log("Invalid inputs!");
+          return;
+        }
+        
+        beginRendering();
+        input.keyboardMessage = code;
+        renderMenu = false;
       }
       
       if (ui.button("render-cross-1", "cross", "")) {
@@ -706,6 +817,97 @@ public class Sketchpad extends Screen {
       }
     }
   }
+  
+  private void beginRendering() {
+    // Don't even bother if our code is not working
+    if (!successful) {
+      console.log("Fix compilation errors before rendering!");
+      return;
+    }
+    
+    // Check frames folder
+    // Using File class cus we need to make dir if it dont exist
+    String framesPath = engine.APPPATH+"frames/";
+    console.log(framesPath);
+    File f = new File(framesPath);
+    if (!f.exists()) {
+      f.mkdir();
+    }
+    
+    // Create our canvases (absolutely no scaling allowed)
+    shaderCanvas = createGraphics(canvas.width, canvas.height, P2D);
+    ((PGraphicsOpenGL)shaderCanvas).textureSampling(2);   // Disable texture smoothing
+    
+    if (upscalePixels != 1.) {
+      scaleCanvas = createGraphics(int(canvas.width*upscalePixels), int(canvas.height*upscalePixels), P2D);
+      ((PGraphicsOpenGL)scaleCanvas).textureSampling(2);   // Disable texture smoothing
+    }
+    
+    // set our variables
+    time = 0.0;
+    renderFrameCount = 0;
+    power.allowMinimizedMode = false;
+    playing = true;
+    
+    // Give a little bit of time so the UI can disappear for better user feedback.
+    timeBeforeStartingRender = 5;
+    
+    // Now we begin.
+    rendering = true;
+  }
+  
+  // Calls our cool and totally not stolen createMovie function
+  // and runs ffmpeg
+  private void beginConversion() {
+    int wi = canvas.width;
+    int hi = canvas.height;
+    if (upscalePixels != 1.) {
+      wi = scaleCanvas.width;
+      hi = scaleCanvas.height;
+    }
+    
+    // create output folder if it don't exist.
+    String outputFolder = engine.APPPATH+"output/";
+    
+    int outIndex = 1;
+    // Note that files are named as:
+    // 0001.mp4
+    // 0002.mp4
+    // 0003.gif
+    // etc
+    // This is so we can save our animation without
+    // replacing any files that may already exist in this folder.
+    
+    File f = new File(outputFolder);
+    if (!f.exists()) {
+      f.mkdir();
+    }
+    else {
+      File[] files = f.listFiles();
+      // Find the highest number count.
+      int highest = 0;
+      for (File ff : files) {
+        // Not to worry if it's a string like "aaa", processing's
+        // int() just returns 0 if that's the case.
+        int num = int(file.getIsolatedFilename(ff.getName()));
+        if (num > highest) {
+          highest = num;
+        }
+      }
+      // Now we have the highest
+      outIndex = highest+1;
+    }
+    
+    // Annnnnd the extension
+    String ext = ".mp4";
+    if (renderFormat.contains("GIF")) ext = ".gif";
+    else if (renderFormat.contains("Apple")) ext = ".mov";
+    
+    converting = true;
+    ffmpeg.framecount = 0;
+    createMovie(outputFolder+nf(outIndex, 4, 0)+ext, "", engine.APPPATH+"frames/", wi, hi, (double)renderFramerate, renderFormat);
+  }
+  
   
   public void content() {
     power.setAwake();
@@ -725,7 +927,8 @@ public class Sketchpad extends Screen {
         if (i == 0) {
           if (loadedJSON != null) {
             timeLength = loadedJSON.getFloat("time_length", 10.0);
-            createCanvas(loadedJSON.getInt("canvas_width", 1024), loadedJSON.getInt("canvas_height", 1024), loadedJSON.getInt("smooth", 1));
+            canvasSmooth = loadedJSON.getInt("smooth", 1);
+            createCanvas(loadedJSON.getInt("canvas_width", 1024), loadedJSON.getInt("canvas_height", 1024), canvasSmooth);
           }
           
           compileCode(code);
@@ -752,9 +955,38 @@ public class Sketchpad extends Screen {
     app.resetShader();
     ui.useSpriteSystem(gui);
     
+    // Display UI for rendering
+    if (rendering) {
+      // We have one for stage 1 and stage 2
+      if (!converting) {
+        ui.loadingIcon(WIDTH*0.75, HEIGHT/2);
+        textSprite("renderinginfoscreen-txt1", "Rendering sketch...\nStage 1/2");
+        if (ui.button("renderinginfoscreen-cancel", "cross_128", "Stop rendering")) {
+          playing = false;
+          rendering = false;
+          power.allowMinimizedMode = true;
+          console.log("Rendering cancelled.");
+        }
+      }
+      else {
+        ui.loadingIcon(WIDTH*0.75, HEIGHT/2);
+        textSprite("renderinginfoscreen-txt1", 
+        "Converting to "+renderFormat+"...\n"+
+        "Stage 2/2\n"+
+        "("+ffmpeg.framecount+"/"+renderFrameCount+")");
+        
+        // Finish rendering
+        //if (ffmpeg.framecount >= renderFrameCount) {
+        //}
+        
+        // TODO: progress bar?
+      }
+    }
+    
     if (!menuShown()) {
       if (ui.button("compile_button", "media_128", "Compile")) {
-        compileCode(code);
+        saveScripts();
+        compileCode(loadScript());
       }
       
       if (ui.button("settings_button", "doc_128", "Sketch config")) {
@@ -768,6 +1000,7 @@ public class Sketchpad extends Screen {
       
       if (ui.button("render_button", "image_128", "Render")) {
         selectedField = null;
+        framerateField.value = "60";
         renderMenu = true;
         input.keyboardMessage = "";
       }
@@ -813,21 +1046,21 @@ public class Sketchpad extends Screen {
     if (input.mouseY() > y && !ui.miniMenuShown()) {
       if (input.mouseX() > BAR_X_START) {
         // If in bar zone
-        if (input.primaryDown) {
+        if (input.primaryDown && !rendering) {
           float notchPercent = min(max((input.mouseX()-BAR_X_START)/BAR_X_LENGTH, 0.), 1.);
           time = timeLength*notchPercent;
         }
       }
       else {
         // If in play button area
-        if (input.primaryClick) {
+        if (input.primaryClick && !rendering) {
           // Toggle play/pause button
           playing = !playing;
           // Restart if at end
           if (playing && time > timeLength) time = 0.;
         }
         // Right click action to show minimenu
-        else if (input.secondaryClick) {
+        else if (input.secondaryClick && !rendering) {
           String[] labels = new String[1];
           Runnable[] actions = new Runnable[1];
           
@@ -841,6 +1074,98 @@ public class Sketchpad extends Screen {
       }
     }
   }
+  
+  
+  
+  // Literally copy+pasted straight from processing code.
+  void createMovie(String path, String soundFilePath, String imgFolderPath, final int wi, final int hi, final double fps, final String formatName) {
+    final File movieFile = new File(path);
+  
+    // ---------------------------------
+    // Check input
+    // ---------------------------------
+    final File soundFile = soundFilePath.trim().length() == 0 ? null : new File(soundFilePath.trim());
+    final File imageFolder = imgFolderPath.trim().length() == 0 ? null : new File(imgFolderPath.trim());
+    if (soundFile == null && imageFolder == null) {
+      timewayEngine.console.bugWarn("createMovie: Need soundFile imageFolder input");
+      return;
+    }
+  
+    if (wi < 1 || hi < 1 || fps < 1) {
+      timewayEngine.console.bugWarn("createMovie: bad numbers");
+      return;
+    }
+  
+    // ---------------------------------
+    // Create the QuickTime movie
+    // ---------------------------------
+    new SwingWorker<Throwable, Object>() {
+  
+      @Override
+      protected Throwable doInBackground() {
+        try {
+          // Read image files
+          File[] imgFiles;
+          if (imageFolder != null) {
+            imgFiles = imageFolder.listFiles(new FileFilter() {
+              final FileSystemView fsv = FileSystemView.getFileSystemView();
+  
+              public boolean accept(File f) {
+                return f.isFile() && !fsv.isHiddenFile(f) &&
+                  !f.getName().equals("Thumbs.db");
+              }
+            });
+            if (imgFiles == null || imgFiles.length == 0) {
+              timewayEngine.console.bugWarn("createMovie: no images found");
+            }
+            Arrays.sort(imgFiles);
+  
+            // Delete movie file if it already exists.
+            if (movieFile.exists()) {
+              if (!movieFile.delete()) {
+                return new RuntimeException("Could not replace " + movieFile.getAbsolutePath());
+              }
+            }
+  
+            ffmpeg.write(movieFile, imgFiles, soundFile, wi, hi, fps, formatName);
+          }
+          return null;
+  
+        } catch (Throwable t) {
+          return t;
+        }
+      }
+  
+      @Override
+      protected void done() {
+        Throwable t;
+        try {
+          t = get();
+        } catch (Exception ex) {
+          t = ex;
+        }
+        if (t != null) {
+          t.printStackTrace();
+          console.warn("createMovie: Failed to create movie, sorry");
+        }
+        else {
+          rendering = false;
+          converting = false;
+          power.allowMinimizedMode = true;
+          console.log("Done render!");
+          
+          // Show the file in file explorer
+          file.open(engine.APPPATH+"output/");
+        }
+      }
+    }.execute();
+  
+  }
+  
+  
+  
+  
+  
   
   
   public void finalize() {

@@ -102,6 +102,10 @@ public class CustomPlugin {
   public float getSpriteY(String name) {
     return getFloat(10, name);
   }
+
+  public void img(String imgName, float x, float y) {
+    call(11, imgName, x, y);
+  }
   
 
 // We need a start() and run() method here which is

@@ -70,6 +70,10 @@ public Object runTWIT(int opcode, Object[] args) {
         
         // getDelta()
         case 7:
+        if (timewayEngine.currScreen instanceof Sketchpad) {
+          Sketchpad sk = (Sketchpad)timewayEngine.currScreen;
+          return sk.getDelta();
+        }
         return timewayEngine.display.getDelta();
         
         // getTimeSeconds()
@@ -86,6 +90,10 @@ public Object runTWIT(int opcode, Object[] args) {
         return timewayEngine.ui.currentSpritePlaceholderSystem.
         getSprite((String)args[0]).getY();
 
+        // img(String imgName, float x, float y)
+        case 11:
+        timewayEngine.display.img((String)args[0], (float)args[1], (float)args[2]);
+        break;
         
         
         default:
