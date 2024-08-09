@@ -130,6 +130,12 @@ public class Explorer extends Screen {
     super.upperBar();
     app.resetShader();
     renderGui();
+    
+    app.textAlign(LEFT, TOP);
+    app.fill(0);
+    app.textFont(engine.DEFAULT_FONT, 36);
+    app.textFont(engine.DEFAULT_FONT, 36);
+    app.text(file.currentDir, 10, 10);
   }
   
     

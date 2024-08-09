@@ -22,6 +22,8 @@ public class Sketchpad extends Screen {
   private AtomicInteger processAfterLoadingIndex = new AtomicInteger(0);
   float textAreaZoom = 22.0;
   private boolean configMenu = false;
+  private boolean renderMenu = false;
+  private int canvasSmooth = 1;
   
   private boolean playing = false;
   private boolean loop = false;
@@ -61,8 +63,7 @@ public class Sketchpad extends Screen {
     gui = new SpriteSystemPlaceholder(engine, engine.APPPATH+engine.PATH_SPRITES_ATTRIB+"gui/sketchpad/");
     gui.interactable = false;
     
-    
-    canvas = createGraphics(int(WIDTH/2), int(HEIGHT), P2D);
+    createCanvas(1024, 1024, 1);
     resetView();
     
     canvasY = myUpperBarWeight;
@@ -95,6 +96,17 @@ public class Sketchpad extends Screen {
     //compileCode(input.keyboardMessage);
   }
   
+  private void createCanvas(int wi, int hi, int smooth) {
+    canvas = createGraphics(wi, hi, P2D);
+    if (smooth == 0) {
+      // Nearest neighbour (hey remember this ancient line of code?)
+      ((PGraphicsOpenGL)canvas).textureSampling(2);    
+    }
+    else {
+      canvas.smooth(smooth);
+    }
+  }
+  
   private void loadSketchieInSeperateThread(String path) {
     loading.set(true);
     processAfterLoadingIndex.set(0);
@@ -121,6 +133,17 @@ public class Sketchpad extends Screen {
     console.log("Saved.");
   }
   
+  private void saveConfig() {
+    JSONObject json = new JSONObject();
+    json.setInt("canvas_width", canvas.width);
+    json.setInt("canvas_height", canvas.height);
+    json.setInt("smooth", canvasSmooth);
+    json.setFloat("time_length", timeLength);
+    
+    app.saveJSONObject(json, sketchiePath+"sketch_config.json");
+  }
+  
+  private JSONObject loadedJSON = null;
   private void loadSketchie(String path) {
     imagesInSketch.clear();
     loadedImages.clear();
@@ -225,6 +248,13 @@ public class Sketchpad extends Screen {
         }
       }
     }
+    
+    // Load sketch config
+    if (file.exists(path+"sketch_config.json")) {
+      loadedJSON = loadJSONObject(path+"sketch_config.json");
+      // Need to load the canvas from a seperate thread
+    }
+    
   }
   
   // for use by the API
@@ -233,7 +263,7 @@ public class Sketchpad extends Screen {
   }
   
   private boolean menuShown() {
-    return configMenu;
+    return configMenu || renderMenu;
   }
   
   private void compileCode(String code) {
@@ -513,14 +543,18 @@ public class Sketchpad extends Screen {
   }
   
   
-  int smooth = 1;
   TextField widthField  = new TextField("config-width", "Width: ");
   TextField heightField = new TextField("config-height", "Height: ");
   TextField timeLengthField = new TextField("config-timelength", "Video length: ");
+  TextField framerateField = new TextField("render-framerate", "Framerate: ");
   public void displayMenu() {
-    if (configMenu) {
+    if (menuShown()) {
       // Bug fix to prevent sprite being selected as we click the menu.
       if (!loading.get()) sprites.selectedSprite = null;
+    }
+    
+    // All config menu stuff
+    if (configMenu) {
       
       gui.sprite("config-back-1", "black");
       
@@ -534,7 +568,7 @@ public class Sketchpad extends Screen {
       timeLengthField.display();
       
       String smoothDisp = "Anti-aliasing: ";
-      switch (smooth) {
+      switch (canvasSmooth) {
         case 0:
         smoothDisp += "None (pixelated)";
         break;
@@ -557,19 +591,19 @@ public class Sketchpad extends Screen {
         Runnable[] actions = new Runnable[5];
         
         labels[0] = "None (pixelated)";
-        actions[0] = new Runnable() {public void run() { smooth = 0; }};
+        actions[0] = new Runnable() {public void run() { canvasSmooth = 0; }};
         
         labels[1] = "1x anti-aliasing";
-        actions[1] = new Runnable() {public void run() { smooth = 1; }};
+        actions[1] = new Runnable() {public void run() { canvasSmooth = 1; }};
         
         labels[2] = "2x anti-aliasing";
-        actions[2] = new Runnable() {public void run() { smooth = 2; }};
+        actions[2] = new Runnable() {public void run() { canvasSmooth = 2; }};
         
         labels[3] = "4x anti-aliasing";
-        actions[3] = new Runnable() {public void run() { smooth = 4; }};
+        actions[3] = new Runnable() {public void run() { canvasSmooth = 4; }};
         
         labels[4] = "8x anti-aliasing";
-        actions[4] = new Runnable() {public void run() { smooth = 8; }};
+        actions[4] = new Runnable() {public void run() { canvasSmooth = 8; }};
         
         
         ui.createOptionsMenu(labels, actions);
@@ -589,23 +623,86 @@ public class Sketchpad extends Screen {
           int hi = Integer.parseInt(heightField.value);
           timeLength = Float.parseFloat(timeLengthField.value)*60.;
           
-          canvas = createGraphics(wi, hi, P2D);
-          if (smooth == 0) {
-            // Nearest neighbour (hey remember this ancient line of code?)
-            ((PGraphicsOpenGL)canvas).textureSampling(2);    
-          }
-          else {
-            canvas.smooth(smooth);
-          }
+          createCanvas(wi, hi, canvasSmooth);
         }
         catch (NumberFormatException e) {
           console.log("Invalid inputs!");
           return;
         }
         
+        saveConfig();
+        
         // End
         input.keyboardMessage = code;
         configMenu = false;
+      }
+    }
+    
+    // We only ever show one of these menu's at a time.
+    else if (renderMenu) {
+      
+      gui.sprite("render-back-1", "black");
+      
+      textSprite("render-menu-title", "--- Render ---");
+      
+      framerateField.display();
+      
+      String compressionDisp = "Compression: ";
+      
+      if (textSprite("render-compression", compressionDisp) && !ui.miniMenuShown()) {
+        String[] labels = new String[6];
+        Runnable[] actions = new Runnable[6];
+        
+        labels[0] = "MPEG-4";
+        actions[0] = new Runnable() {public void run() {  }};
+        
+        labels[1] = "MPEG-4 (Lossless 4:2:0)";
+        actions[1] = new Runnable() {public void run() {  }};
+        
+        labels[2] = "MPEG-4 (Lossless (4:4:4)";
+        actions[2] = new Runnable() {public void run() {  }};
+        
+        labels[3] = "Apple ProRes 4444";
+        actions[3] = new Runnable() {public void run() {  }};
+        
+        labels[4] = "Animated GIF";
+        actions[4] = new Runnable() {public void run() {  }};
+        
+        labels[5] = "Animated GIF (loop)";
+        actions[5] = new Runnable() {public void run() {  }};
+        
+        ui.createOptionsMenu(labels, actions);
+      }
+      
+      String upscaleDisp = "Pixel upscale: ";
+      if (textSprite("render-upscale", upscaleDisp) && !ui.miniMenuShown()) {
+        String[] labels = new String[6];
+        Runnable[] actions = new Runnable[6];
+        
+        labels[0] = "x1 (None)";
+        actions[0] = new Runnable() {public void run() {  }};
+        
+        labels[1] = "x2";
+        actions[1] = new Runnable() {public void run() {  }};
+        
+        labels[2] = "x3";
+        actions[2] = new Runnable() {public void run() {  }};
+        
+        labels[3] = "x4";
+        actions[3] = new Runnable() {public void run() {  }};
+        
+        labels[4] = "x5";
+        actions[4] = new Runnable() {public void run() {  }};
+        
+        labels[5] = "x6";
+        actions[5] = new Runnable() {public void run() {  }};
+        
+        ui.createOptionsMenu(labels, actions);
+      }
+      
+      if (ui.button("render-cross-1", "cross", "")) {
+        input.keyboardMessage = code;
+        renderMenu = false;
       }
     }
   }
@@ -626,6 +723,11 @@ public class Sketchpad extends Screen {
         display.systemImages.put(imagesInSketch.get(i), new DImage(largeimg, loadedImages.get(i)));
         
         if (i == 0) {
+          if (loadedJSON != null) {
+            timeLength = loadedJSON.getFloat("time_length", 10.0);
+            createCanvas(loadedJSON.getInt("canvas_width", 1024), loadedJSON.getInt("canvas_height", 1024), loadedJSON.getInt("smooth", 1));
+          }
+          
           compileCode(code);
         }
       }
@@ -661,6 +763,12 @@ public class Sketchpad extends Screen {
         timeLengthField.value = str(timeLength/60.);
         selectedField = null;
         configMenu = true;
+        input.keyboardMessage = "";
+      }
+      
+      if (ui.button("render_button", "image_128", "Render")) {
+        selectedField = null;
+        renderMenu = true;
         input.keyboardMessage = "";
       }
       

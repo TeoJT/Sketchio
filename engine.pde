@@ -7157,7 +7157,9 @@ public class TWEngine {
   
   // TODO: Move requestScreen from Screen class to engine.
   public void requestScreen(Screen screen) {
-    if (currScreen != null) currScreen.requestScreen(screen);
+    if (currScreen != null) {
+      currScreen.requestScreen(screen);
+    }
   }
   
   public void previousScreen() {
