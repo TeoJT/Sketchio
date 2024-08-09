@@ -11,20 +11,49 @@ public class CustomPlugin {
   public final float HALF_PI = PApplet.HALF_PI;
   public final float TWO_PI = PApplet.TWO_PI;
 
-  // API calls.
-
-  public String test(int number) {
-    apiOpCode = 1;
-    args[0] = number;
+  private String getString(int op, Object... argss) {
+    apiOpCode = op;
+    for (int i = 0; i < argss.length; i++) {
+      args[i] = argss[i];
+    }
     apiCall.run();
     return (String)ret;
   }
 
-  public void sprite(String name, String img) {
-    apiOpCode = 2;
-    args[0] = name;
-    args[1] = img;
+  private float getFloat(int op, Object... argss) {
+    apiOpCode = op;
+    for (int i = 0; i < argss.length; i++) {
+      args[i] = argss[i];
+    }
     apiCall.run();
+    return (float)ret;
+  }
+  
+  private int getInt(int op, Object... argss) {
+    apiOpCode = op;
+    for (int i = 0; i < argss.length; i++) {
+      args[i] = argss[i];
+    }
+    apiCall.run();
+    return (int)ret;
+  }
+
+  private void call(int op, Object... argss) {
+    apiOpCode = op;
+    for (int i = 0; i < argss.length; i++) {
+      args[i] = argss[i];
+    }
+    apiCall.run();
+  }
+
+  // API calls.
+
+  public String test(int number) {
+    return getString(1, number);
+  }
+
+  public void sprite(String name, String img) {
+    call(2, name, img);
   }
 
   public void sprite(String name) {
@@ -47,35 +76,31 @@ public class CustomPlugin {
   }
 
   public void warn(String message) {
-    apiOpCode = 4;
-    args[0] = message;
-    apiCall.run();
+    call(4, message);
   }
 
   public void moveSprite(String name, float x, float y) {
-    apiOpCode = 5;
-    args[0] = name;
-    args[1] = x;
-    args[2] = y;
-    apiCall.run();
+    call(5, name, x, y);
   }
 
   public float getTime() {
-    apiOpCode = 6;
-    apiCall.run();
-    return (float)ret;
+   return getFloat(6);
   }
   
   public float getDelta() {
-    apiOpCode = 7;
-    apiCall.run();
-    return (float)ret;
+    return getFloat(7);
   }
 
   public float getTimeSeconds() {
-    apiOpCode = 8;
-    apiCall.run();
-    return (float)ret;
+    return getFloat(8);
+  }
+
+  public float getSpriteX(String name) {
+    return getFloat(9, name);
+  }
+
+  public float getSpriteY(String name) {
+    return getFloat(10, name);
   }
   
 

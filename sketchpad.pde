@@ -4,6 +4,7 @@
 public class Sketchpad extends Screen {
   private String sketchiePath = "";
   private TWEngine.PluginModule.Plugin plugin;
+  private String code = "";
   private boolean compiling = false;
   private boolean successful = false;
   private SpriteSystemPlaceholder sprites;
@@ -20,6 +21,12 @@ public class Sketchpad extends Screen {
   private AtomicBoolean loading = new AtomicBoolean(true);
   private AtomicInteger processAfterLoadingIndex = new AtomicInteger(0);
   float textAreaZoom = 22.0;
+  private boolean configMenu = false;
+  
+  private boolean playing = false;
+  private boolean loop = false;
+  private float time = 0.;
+  private float timeLength = 10.*60.;
   
   // Canvas 
   private float beginDragX = 0.;
@@ -51,7 +58,7 @@ public class Sketchpad extends Screen {
     super(engine);
     myUpperBarWeight = 100.;
     
-    gui = new SpriteSystemPlaceholder(engine, engine.APPPATH+engine.PATH_SPRITES_ATTRIB+"gui/test/");
+    gui = new SpriteSystemPlaceholder(engine, engine.APPPATH+engine.PATH_SPRITES_ATTRIB+"gui/sketchpad/");
     gui.interactable = false;
     
     
@@ -108,7 +115,7 @@ public class Sketchpad extends Screen {
     // Not gonna bother putting a TODO but you know that the script isn't going to stick to
     // a keyboard forever.
     String[] strs = new String[1];
-    strs[0] = input.keyboardMessage;
+    strs[0] = code;
     app.saveStrings(sketchiePath+"scripts/main.pde", strs);
     
     console.log("Saved.");
@@ -220,6 +227,15 @@ public class Sketchpad extends Screen {
     }
   }
   
+  // for use by the API
+  public float getTime() {
+    return time;
+  }
+  
+  private boolean menuShown() {
+    return configMenu;
+  }
+  
   private void compileCode(String code) {
     Thread t1 = new Thread(new Runnable() {
       public void run() {
@@ -237,7 +253,7 @@ public class Sketchpad extends Screen {
     canvasY = canvas.height*canvasScale*0.5;
     canvasScale = 1.0;
     // Only reset view if the mouse is in the canvas pane
-    if (engine.mouseX() < middle()) {
+    if (input.mouseX() < middle()) {
       canvasPaneScroll = -1000.;
     }
     else {
@@ -247,25 +263,43 @@ public class Sketchpad extends Screen {
   }
   
   private void runCode() {
+    // Display compilation status
     if (!compiling && once) {
       once = false;
       if (!successful) {
         console.log(plugin.errorOutput);
+        playing = false;
       }
       else {
         console.log("Successful compilation!");
+        playing = true;
+        time = 0.;
       }
     }
+    
+    // Need to use the right sprite system
     ui.useSpriteSystem(sprites);
+    sprites.interactable = !menuShown();
+    
+    // Switch canvas, then begin running the plugin code
     if (successful && !compiling) {
       canvas.beginDraw();
       canvas.fill(255, 255);
       display.setPGraphics(canvas);
       plugin.run();
       canvas.endDraw();
-      display.setPGraphics(app.g);
     }
     sprites.updateSpriteSystem();
+    display.setPGraphics(app.g);
+    
+    // Update time
+    if (playing) {
+      time += display.getDelta();
+      if (time > timeLength) {
+        if (!loop) playing = false;
+        else time = 0.;
+      }
+    }
   }
   
   // Creating this funciton because I think the width of
@@ -285,7 +319,7 @@ public class Sketchpad extends Screen {
     
     // Difficulty: we have 2 scroll areas: canvas zoom, and code editor.
     // if mouse is in canvas pane
-    boolean canvasPane = engine.mouseX() < middle();
+    boolean canvasPane = input.mouseX() < middle() && !menuShown();
     if (canvasPane) {
       if (!inCanvasPane) {
         inCanvasPane = true;
@@ -301,18 +335,20 @@ public class Sketchpad extends Screen {
       scroll = canvasPaneScroll;
     }
     canvasScale = (-scroll)/1000.;
-    if (engine.mouseX() < middle() && sprites.selectedSprite == null) {
+    
+    
+    if (canvasPane && sprites.selectedSprite == null && input.mouseY() < HEIGHT-myLowerBarWeight && input.mouseY() > myUpperBarWeight) {
       if (input.primaryDown && !isDragging) {
-        beginDragX = engine.mouseX();
-        beginDragY = engine.mouseY();
+        beginDragX = input.mouseX();
+        beginDragY = input.mouseY();
         prevCanvasX = canvasX;
         prevCanvasY = canvasY;
         isDragging = true;
       }
     }
     if (isDragging) {
-      canvasX = prevCanvasX+(engine.mouseX()-beginDragX);
-      canvasY = prevCanvasY+(engine.mouseY()-beginDragY);
+      canvasX = prevCanvasX+(input.mouseX()-beginDragX);
+      canvasY = prevCanvasY+(input.mouseY()-beginDragY);
       
       if (!input.primaryDown || sprites.selectedSprite != null) {
         isDragging = false;
@@ -344,8 +380,10 @@ public class Sketchpad extends Screen {
   }
   
   private void displayCodeEditor() {
+    if (!menuShown()) code = input.keyboardMessage;
+    
     // Update scroll for code pane
-    boolean inCodePane = engine.mouseX() >= middle();
+    boolean inCodePane = input.mouseX() >= middle();
     if (inCodePane) {
       if (inCanvasPane) {
         inCanvasPane = false;
@@ -354,7 +392,7 @@ public class Sketchpad extends Screen {
         input.scrollOffset = codePaneScroll;
       }
       
-      input.processScroll(0., max(getTextHeight(input.keyboardMessage)-(HEIGHT-myUpperBarWeight-myLowerBarWeight), 0));
+      input.processScroll(0., max(getTextHeight(code)-(HEIGHT-myUpperBarWeight-myLowerBarWeight), 0));
     }
     
     // ctrl+s save keystroke
@@ -394,7 +432,7 @@ public class Sketchpad extends Screen {
     
     // Scroll slightly when some y added t text.
     if (input.enterOnce) {
-      if (getTextHeight(input.keyboardMessage) > (HEIGHT-myUpperBarWeight-myLowerBarWeight) && inCodePane) {
+      if (getTextHeight(code) > (HEIGHT-myUpperBarWeight-myLowerBarWeight) && inCodePane) {
         input.scrollOffset -= (textAreaZoom);  // Literally just a random char
       }
     }
@@ -411,7 +449,165 @@ public class Sketchpad extends Screen {
     if (!inCodePane) {
       scroll = codePaneScroll;
     }
-    app.text(input.keyboardMessageDisplay(), x, y+scroll);
+    
+    if (!menuShown()) {
+      app.text(input.keyboardMessageDisplay(code), x, y+scroll);
+    }
+    else {
+      app.text(code, x, y+scroll);
+    }
+  }
+  
+  TextField selectedField = null;
+  class TextField {
+    private String spriteName = "";
+    public String value = "";
+    private String labelDisplay = "";
+    
+    public TextField(String spriteName, String labelDisplay) {
+      this.spriteName = spriteName;
+      this.labelDisplay = labelDisplay;
+    }
+    
+    public void display() {
+      String disp = gui.interactable ? "white" : "nothing";
+      if (selectedField == this) {
+        gui.sprite(spriteName, disp);
+        value = input.keyboardMessage;
+      }
+      else {
+        if (ui.button(spriteName, disp, "")) {
+          selectedField = this;
+          input.keyboardMessage = value;
+        }
+      }
+      
+      float x = gui.getSprite(spriteName).getX();
+      float y = gui.getSprite(spriteName).getY();
+      
+      
+      app.textAlign(LEFT, TOP);
+      app.textSize(32);
+      if (selectedField == this) {
+        app.text(labelDisplay+input.keyboardMessageDisplay(value), x, y);
+      }
+      else {
+        app.text(labelDisplay+value, x, y);
+      }
+    }
+  }
+  
+  
+  
+  public boolean textSprite(String name, String val) {
+    String disp = gui.interactable ? "white" : "nothing";
+    boolean clicked = ui.button(name, disp, "");
+    
+    float x = gui.getSprite(name).getX();
+    float y = gui.getSprite(name).getY();
+    
+    app.textAlign(LEFT, TOP);
+    app.textSize(32);
+    app.text(val, x, y);
+    return clicked;
+  }
+  
+  
+  int smooth = 1;
+  TextField widthField  = new TextField("config-width", "Width: ");
+  TextField heightField = new TextField("config-height", "Height: ");
+  TextField timeLengthField = new TextField("config-timelength", "Video length: ");
+  public void displayMenu() {
+    if (configMenu) {
+      // Bug fix to prevent sprite being selected as we click the menu.
+      if (!loading.get()) sprites.selectedSprite = null;
+      
+      gui.sprite("config-back-1", "black");
+      
+      textSprite("config-menu-title", "--- Sketch config ---");
+      
+      
+      // Width and height fields
+      app.fill(255);
+      widthField.display();
+      heightField.display();
+      timeLengthField.display();
+      
+      String smoothDisp = "Anti-aliasing: ";
+      switch (smooth) {
+        case 0:
+        smoothDisp += "None (pixelated)";
+        break;
+        case 1:
+        smoothDisp += "1x";
+        break;
+        case 2:
+        smoothDisp += "2x";
+        break;
+        case 4:
+        smoothDisp += "4x";
+        break;
+        case 8:
+        smoothDisp += "8x";
+        break;
+      }
+      
+      if (textSprite("config-smooth", smoothDisp) && !ui.miniMenuShown()) {
+        String[] labels = new String[5];
+        Runnable[] actions = new Runnable[5];
+        
+        labels[0] = "None (pixelated)";
+        actions[0] = new Runnable() {public void run() { smooth = 0; }};
+        
+        labels[1] = "1x anti-aliasing";
+        actions[1] = new Runnable() {public void run() { smooth = 1; }};
+        
+        labels[2] = "2x anti-aliasing";
+        actions[2] = new Runnable() {public void run() { smooth = 2; }};
+        
+        labels[3] = "4x anti-aliasing";
+        actions[3] = new Runnable() {public void run() { smooth = 4; }};
+        
+        labels[4] = "8x anti-aliasing";
+        actions[4] = new Runnable() {public void run() { smooth = 8; }};
+        
+        
+        ui.createOptionsMenu(labels, actions);
+      }
+      
+      
+      if (ui.button("config-cross-1", "cross", "")) {
+        input.keyboardMessage = code;
+        configMenu = false;
+      }
+      
+      if (ui.button("config-ok", "tick_128", "Apply")) {
+        time = 0.;
+        
+        try {
+          int wi = Integer.parseInt(widthField.value);
+          int hi = Integer.parseInt(heightField.value);
+          timeLength = Float.parseFloat(timeLengthField.value)*60.;
+          
+          canvas = createGraphics(wi, hi, P2D);
+          if (smooth == 0) {
+            // Nearest neighbour (hey remember this ancient line of code?)
+            ((PGraphicsOpenGL)canvas).textureSampling(2);    
+          }
+          else {
+            canvas.smooth(smooth);
+          }
+        }
+        catch (NumberFormatException e) {
+          console.log("Invalid inputs!");
+          return;
+        }
+        
+        // End
+        input.keyboardMessage = code;
+        configMenu = false;
+      }
+    }
   }
   
   public void content() {
@@ -420,7 +616,6 @@ public class Sketchpad extends Screen {
     if (!loading.get()) {
       if (processAfterLoadingIndex.get() > 0) {
         int i = processAfterLoadingIndex.decrementAndGet();
-        
         
         // Create large image, I don't want the lag
         // TODO: option to select large image or normal pimage.
@@ -431,7 +626,7 @@ public class Sketchpad extends Screen {
         display.systemImages.put(imagesInSketch.get(i), new DImage(largeimg, loadedImages.get(i)));
         
         if (i == 0) {
-          compileCode(input.keyboardMessage);
+          compileCode(code);
         }
       }
       
@@ -440,7 +635,6 @@ public class Sketchpad extends Screen {
       displayCodeEditor();
     }
     else {
-      
       ui.loadingIcon(WIDTH/4, HEIGHT/2);
       app.textFont(engine.DEFAULT_FONT, 32);
       app.fill(255);
@@ -455,18 +649,34 @@ public class Sketchpad extends Screen {
     super.upperBar();
     app.resetShader();
     ui.useSpriteSystem(gui);
-    if (ui.button("compile_button", "media_128", "Compile")) {
-      compileCode(input.keyboardMessage);
+    
+    if (!menuShown()) {
+      if (ui.button("compile_button", "media_128", "Compile")) {
+        compileCode(code);
+      }
+      
+      if (ui.button("settings_button", "doc_128", "Sketch config")) {
+        widthField.value = str(canvas.width);
+        heightField.value = str(canvas.height);
+        timeLengthField.value = str(timeLength/60.);
+        selectedField = null;
+        configMenu = true;
+        input.keyboardMessage = "";
+      }
+      
+      if (ui.button("back_button", "back_arrow_128", "Explorer")) {
+        saveScripts();
+        previousScreen();
+      }
+      
+      if (compiling) {
+        ui.loadingIcon(WIDTH-myUpperBarWeight/2-10, myUpperBarWeight/2, myUpperBarWeight);
+      }
+    }
+    else {
+      displayMenu();
     }
     
-    if (ui.button("back_button", "back_arrow_128", "Explorer")) {
-      saveScripts();
-      previousScreen();
-    }
-    
-    if (compiling) {
-      ui.loadingIcon(WIDTH-myUpperBarWeight/2-10, myUpperBarWeight/2, myUpperBarWeight);
-    }
     gui.updateSpriteSystem();
   }
   
@@ -474,6 +684,54 @@ public class Sketchpad extends Screen {
     display.shader("fabric", "color", 0.43,0.4,0.42,1., "intensity", 0.1);
     super.lowerBar();
     app.resetShader();
+    
+    float BAR_X_START = 70.;
+    float BAR_X_LENGTH = WIDTH-120.-BAR_X_START;
+    
+    // Display timeline
+    float y = HEIGHT-myLowerBarWeight;
+    app.fill(50);
+    app.noStroke();
+    app.rect(BAR_X_START, y+(myLowerBarWeight/2)-2, BAR_X_LENGTH, 4);
+    
+    float percent = time/timeLength;
+    float timeNotchPos = BAR_X_START+BAR_X_LENGTH*percent;
+    
+    app.fill(255);
+    app.rect(timeNotchPos-4, y+(myLowerBarWeight/2)-25, 8, 50); 
+    
+    display.imgCentre(playing ? "pause_128" : "play_128", BAR_X_START/2, y+(myLowerBarWeight/2), myLowerBarWeight, myLowerBarWeight);
+    
+    if (input.mouseY() > y && !ui.miniMenuShown()) {
+      if (input.mouseX() > BAR_X_START) {
+        // If in bar zone
+        if (input.primaryDown) {
+          float notchPercent = min(max((input.mouseX()-BAR_X_START)/BAR_X_LENGTH, 0.), 1.);
+          time = timeLength*notchPercent;
+        }
+      }
+      else {
+        // If in play button area
+        if (input.primaryClick) {
+          // Toggle play/pause button
+          playing = !playing;
+          // Restart if at end
+          if (playing && time > timeLength) time = 0.;
+        }
+        // Right click action to show minimenu
+        else if (input.secondaryClick) {
+          String[] labels = new String[1];
+          Runnable[] actions = new Runnable[1];
+          
+          labels[0] = loop ? "Disable loop" : "Enable loop";
+          actions[0] = new Runnable() {public void run() {
+              loop = !loop;
+          }};
+          
+          ui.createOptionsMenu(labels, actions);
+        }
+      }
+    }
   }
   
   

@@ -54,7 +54,7 @@ public Object runTWIT(int opcode, Object[] args) {
         timewayEngine.console.warn((String)args[0]);
         break;
         
-        // moveSprite(float x, float y)
+        // moveSprite(String name, float x, float y)
         case 5:
         timewayEngine.ui.currentSpritePlaceholderSystem.
         getSprite((String)args[0]).offmove((float)args[1], (float)args[2]);
@@ -62,7 +62,11 @@ public Object runTWIT(int opcode, Object[] args) {
         
         // getTime()
         case 6:
-        return timewayEngine.display.getTime();
+        if (timewayEngine.currScreen instanceof Sketchpad) {
+          Sketchpad sk = (Sketchpad)timewayEngine.currScreen;
+          return sk.getTime();
+        }
+        else return 0.;
         
         // getDelta()
         case 7:
@@ -72,7 +76,15 @@ public Object runTWIT(int opcode, Object[] args) {
         case 8:
         return timewayEngine.display.getTimeSeconds();
         
+        // getSpriteX(String name)
+        case 9:
+        return timewayEngine.ui.currentSpritePlaceholderSystem.
+        getSprite((String)args[0]).getX();
         
+        // getSpriteY(String name)
+        case 10:
+        return timewayEngine.ui.currentSpritePlaceholderSystem.
+        getSprite((String)args[0]).getY();
 
         
         

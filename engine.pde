@@ -1955,6 +1955,11 @@ public class TWEngine {
         
         this.width = maxWidth+SPACING*2.+OFFSET_SPACING_X;
         this.height = hi+SPACING;
+        
+        // lil fix
+        if (this.y+this.height > display.HEIGHT) {
+          this.y = mouseY()-this.height;
+        }
       }
       
       public OptionsMenu(ArrayList<String> opts, ArrayList<Runnable> acts) {
@@ -6672,10 +6677,12 @@ public class TWEngine {
       if (leftOnce) { 
         cursorX--;
         if (ctrlDown) {
+          boolean traversed = false;
           while (ctrlTraversable()) {
             cursorX--;
+            traversed = true;
           }
-          cursorX++;
+          if (traversed) cursorX++;
         }
       }
       else if (rightOnce) {
@@ -6806,24 +6813,28 @@ public class TWEngine {
       keys[val] = 0;
     }
     
-    public String keyboardMessageDisplay() {
+    public String keyboardMessageDisplay(String code) {
       if (int(blinkTime) % 60 < 30) {
         // Blinking cursor replaces the current character with █
         // But we do NOT want it to replace \n since this will remove the newline and make
         // the text all wonky.
         // Also ignore all the min(), I don't want to get a StringIndexOutOfBoundsException.
-        int l = keyboardMessage.length();
+        int l = code.length();
         if (l == 0) return CURSOR_CHAR;
         
         
-        if (keyboardMessage.charAt(min(cursorX, l-1)) == '\n') {
-          return keyboardMessage.substring(0, min(cursorX, l))+CURSOR_CHAR+keyboardMessage.substring(min(cursorX, l-1));
+        if (code.charAt(min(cursorX, l-1)) == '\n') {
+          return code.substring(0, min(cursorX, l))+CURSOR_CHAR+code.substring(min(cursorX, l-1));
         }
         else {
-          return keyboardMessage.substring(0, min(cursorX, l))+CURSOR_CHAR+keyboardMessage.substring(min(cursorX+1, l));
+          return code.substring(0, min(cursorX, l))+CURSOR_CHAR+code.substring(min(cursorX+1, l));
         }
       }
-      return keyboardMessage;
+      return code;
+    }
+    
+    public String keyboardMessageDisplay() {
+      return keyboardMessageDisplay(keyboardMessage);
     }
   
     public boolean keyDown(char k) {
@@ -8062,20 +8073,26 @@ public final class SpriteSystemPlaceholder {
             
             
             public boolean mouseWithinSprite() {
+                // Bug fix thing to not allow clickable area to go outside canvas bounds.
+                // it's for umm *ahem* sketchiepad.
+                float canvwi = engine.display.currentPG.width;
+                float canvhi = engine.display.currentPG.height;
+                float x   = max(min(xpos, canvwi), 0);
+                float y   = max(min(ypos, canvhi), 0);
+                float xwi = max(min(xpos+wi, canvwi), 0);
+                float yhi = max(min(ypos+hi, canvhi), 0);
                 switch (mode) {
-                case SINGLE: {
-                    float x = xpos, y = ypos;
-                    return (mouseX() > x && mouseY() > y && mouseX() < x+wi && mouseY() < y+hi);
-                    //return (mouseX > x && mouseY > y && mouseX < x+wi && mouseY < y+hi && !repositionDrag.isDragging());
-                }
-                case DOUBLE: {
-                    float x = xpos, y = ypos;
-                    return (mouseX() > x && mouseY() > y && mouseX() < x+wi && mouseY() < y+hi);
-                }
-                case VERTEX:
-                    return polyPoint(vertex.v, mouseX(), mouseY());
-                case ROTATE: {
-                    return rotateCollision();
+                  case SINGLE: {
+                      return (mouseX() > x && mouseY() > y && mouseX() < xwi && mouseY() < yhi);
+                      //return (mouseX > x && mouseY > y && mouseX < x+wi && mouseY < y+hi && !repositionDrag.isDragging());
+                  }
+                  case DOUBLE: {
+                      return (mouseX() > x && mouseY() > y && mouseX() < xwi && mouseY() < yhi);
+                  }
+                  case VERTEX:
+                      return polyPoint(vertex.v, mouseX(), mouseY());
+                  case ROTATE: {
+                      return rotateCollision();
                 }
                     
                 }

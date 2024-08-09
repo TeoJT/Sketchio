@@ -94,13 +94,7 @@ public class Explorer extends Screen {
   
   private void renderGui() {
     
-    //************NEW ENTRY************
     ui.useSpriteSystem(gui);
-    if (ui.button("new_entry", "new_entry_128", "New entry")) {
-      // TODO: placeholder
-      //String newName = file.currentDir+engine.appendZeros(numTimewayEntries, 5)+"."+engine.ENTRY_EXTENSION;
-      //requestScreen(new Editor(engine, newName));
-    }
     
     //************NEW FOLDER************
     if (ui.button("new_folder", "new_folder_128", "New folder")) {
