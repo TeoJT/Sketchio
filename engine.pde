@@ -7554,6 +7554,8 @@ public final class SpriteSystemPlaceholder {
         public float mouseScaleY = 1.0;
         public float mouseOffsetX = 0.0;
         public float mouseOffsetY = 0.0;
+        public float myDelta = 0.; 
+        private boolean customDelta = false;
 
         public String PATH_SPRITES_ATTRIB;
         public String APPPATH; 
@@ -7570,6 +7572,11 @@ public final class SpriteSystemPlaceholder {
         }
         private float mouseY() {
           return ((engine.mouseY()-mouseOffsetY)/mouseScaleY);
+        }
+        
+        public void setDelta(float del) {
+          customDelta = true;
+          myDelta = del;
         }
 
         // Use this constructor for no saving sprite data.
@@ -7798,7 +7805,7 @@ public final class SpriteSystemPlaceholder {
             }
             public void poke(int f) {
                 //rot += 0.05;
-                bop *= 0.85;
+                bop *= PApplet.pow(0.85, myDelta);
                 lastFrameShown = f;
             }
             public boolean beingUsed(int f) {
@@ -8747,6 +8754,12 @@ public final class SpriteSystemPlaceholder {
         }
 
         public void updateSpriteSystem() {
+            // By default, delta is engine's delta
+            if (!customDelta) {
+              customDelta = false;
+            }
+            else myDelta = engine.display.getDelta();
+            
             this.keyboardInteractionEnabler();
             this.generalClick.update();
             this.runSpriteInteraction();

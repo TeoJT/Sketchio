@@ -331,6 +331,9 @@ public class Sketchpad extends Screen {
     ui.useSpriteSystem(sprites);
     sprites.interactable = !menuShown();
     
+    // Use our custom delta funciton (which force sets it to the correct value while rendering)
+    sprites.setDelta(getDelta());
+    
     // Switch canvas, then begin running the plugin code
     if (successful && !compiling) {
       canvas.beginDraw();
@@ -529,7 +532,7 @@ public class Sketchpad extends Screen {
       
       // ctrl+s save keystroke
       // Really got to fix this input.keys flaw thing.
-      if (input.ctrlDown && input.keys[int('s')] == 2) {
+      if (!input.altDown && input.ctrlDown && input.keys[int('s')] == 2) {
         saveScripts();
       }
       
@@ -762,7 +765,7 @@ public class Sketchpad extends Screen {
         labels[4] = "Animated GIF";
         actions[4] = new Runnable() {public void run() { renderFormat = labels[4]; }};
         
-        labels[5] = "Animated GIF (loop)";
+        labels[5] = "Animated GIF (Loop)";
         actions[5] = new Runnable() {public void run() { renderFormat = labels[5]; }};
         
         ui.createOptionsMenu(labels, actions);

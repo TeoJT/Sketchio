@@ -95,6 +95,22 @@ public Object runTWIT(int opcode, Object[] args) {
         timewayEngine.display.img((String)args[0], (float)args[1], (float)args[2]);
         break;
         
+        // scaleSprite(String name, float wi, float hi)
+        case 12:
+        // X scale
+        timewayEngine.ui.currentSpritePlaceholderSystem.
+        getSprite((String)args[0]).offsetWidth(int((float)args[1]));
+        // Y scale
+        timewayEngine.ui.currentSpritePlaceholderSystem.
+        getSprite((String)args[0]).offsetHeight(int((float)args[2]));
+        break;
+        
+        // spriteBop(String name, float amount)
+        case 13:
+        timewayEngine.ui.currentSpritePlaceholderSystem.
+        getSprite((String)args[0]).bop(int((float)args[1]));
+        break;
+        
         
         default:
         timewayEngine.console.warn("Unknown opcode "+opcode);

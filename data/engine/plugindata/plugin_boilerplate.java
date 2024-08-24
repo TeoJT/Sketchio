@@ -106,6 +106,22 @@ public class CustomPlugin {
   public void img(String imgName, float x, float y) {
     call(11, imgName, x, y);
   }
+
+  public void scaleSprite(String name, float wi, float hi) {
+    call(12, name, wi, hi);
+  }
+  
+  public void scaleSprite(String name, float wihi) {
+    scaleSprite(name, wihi, wihi);
+  }
+
+  public void spriteBop(String name, float amount) {
+    call(13, name, amount);
+  }
+
+  public void spriteBop(String name) {
+    spriteBop(name, 0.2f);
+  }
   
 
 // We need a start() and run() method here which is
