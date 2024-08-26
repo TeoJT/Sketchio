@@ -93,6 +93,8 @@ public class Sketchpad extends Screen {
     input.cursorX = input.keyboardMessage.length();
     
     ffmpeg = new FFmpegEngine();
+    
+    sound.streamMusic(engine.APPPATH+"engine/music/test.mp3");
   }
   
   private void createCanvas(int wi, int hi, int smooth) {
@@ -941,6 +943,8 @@ public class Sketchpad extends Screen {
       runCode();
       displayCanvas();
       displayCodeEditor();
+      
+      sound.syncMusic(time/60.);
     }
     else {
       ui.loadingIcon(WIDTH/4, HEIGHT/2);
