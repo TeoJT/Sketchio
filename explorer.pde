@@ -154,11 +154,6 @@ public class Explorer extends Screen {
   // Let's render our stuff.
   public void content() {
     // TODO: Should have a function with this to remove code bloat?
-      app.fill(255);
-      app.textFont(engine.DEFAULT_FONT, 50);
-      app.textSize(70);
-      app.textAlign(LEFT, TOP);
-      app.text("Explorer", 50, 80);
       
       if (file.loading) {
         ui.loadingIcon(WIDTH/2, HEIGHT/2);
@@ -177,6 +172,16 @@ public class Explorer extends Screen {
         app.rect(display.WIDTH/2-promptWi/2, display.HEIGHT/2-promptHi/2, promptWi, promptHi);
         engine.displayInputPrompt();
       }
+      
+      // Render this on top.
+      app.noStroke();
+      app.fill(0);
+      app.rect(0, 0, WIDTH, myUpperBarWeight+100);
+      
+      app.fill(255);
+      app.textFont(engine.DEFAULT_FONT, 70);
+      app.textAlign(LEFT, TOP);
+      app.text("Explorer", 50, 80);
   }
   
 }

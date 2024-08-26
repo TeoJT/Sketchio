@@ -356,6 +356,7 @@ public class TWEngine {
         defaultKeybindings.putIfAbsent("menu", '\t');
         defaultKeybindings.putIfAbsent("menuSelect", '\t');
         defaultKeybindings.putIfAbsent("jump", ' ');
+        defaultKeybindings.putIfAbsent("playPause", ' ');
         defaultKeybindings.putIfAbsent("sneak", char(0x0F));
         defaultKeybindings.putIfAbsent("dash", 'r');
         defaultKeybindings.putIfAbsent("scaleUp", '=');
@@ -2358,8 +2359,7 @@ public class TWEngine {
     public final String MUSIC_CACHE_FILE = "music_cache.json";
     public final int MAX_MUSIC_CACHE_SIZE_KB = 1024*256;  // 256 MB
     public final String[] FORCE_CACHE_MUSIC = {
-      "engine/music/pixelrealm_default_bgm.wav",
-      "engine/music/pixelrealm_default_bgm_legacy.wav"
+      "engine/music/default.wav",
     };
     // For when porting to other platforms which don't support gstreamer (*ahem* android *ahem*) 
     public boolean DISABLE_GSTREAMER = false;
@@ -3055,9 +3055,15 @@ public class TWEngine {
     }
     
     private float masterVolume = 1.;
+    private float musicVolume = 1.;
+    
     public void setMasterVolume(float vol) {
       masterVolume = vol;
       //Sound.volume(vol);
+    }
+    
+    public void setMusicVolume(float vol) {
+      musicVolume = vol;
     }
   
   
@@ -3201,6 +3207,13 @@ public class TWEngine {
       }
     }
     
+    public float getCurrentMusicDuration() {
+      if (streamerMusic != null) {
+        return streamerMusic.duration();
+      }
+      return 0.0;
+    }
+    
   
     public void processSound() {
       // Once gstreamer has loaded up, begin playing the music we actually want to play.
@@ -3236,7 +3249,7 @@ public class TWEngine {
           // Fade the new music in.
           if (streamerMusicFadeTo != null) {
             streamerMusicFadeTo.play();
-            streamerMusicFadeTo.volume((1.-vol)*masterVolume);
+            streamerMusicFadeTo.volume((1.-vol)*masterVolume*musicVolume);
           } 
           
           
@@ -3256,7 +3269,7 @@ public class TWEngine {
       if (streamerMusic != null) {
         // Don't wanna change the volume on cached music
         if (!loadingMusic())
-          streamerMusic.volume(masterVolume);
+          streamerMusic.volume(masterVolume*musicVolume);
           
         if (streamerMusic.available() == true) {
           streamerMusic.read();
@@ -3837,6 +3850,8 @@ public class TWEngine {
         return "unknown_128";
       case FILE_TYPE_DOC:
         return "doc_128";
+      case FILE_TYPE_SKETCHIO:
+        return "sketchio_128";
       case FILE_TYPE_TIMEWAYENTRY:
         return "timeway_entry_64";
       default:
@@ -3866,6 +3881,9 @@ public class TWEngine {
         
       if (ext.equals(ENTRY_EXTENSION))
         return FileType.FILE_TYPE_TIMEWAYENTRY;
+        
+      if (ext.equals("sketchio"))
+        return FileType.FILE_TYPE_SKETCHIO;
   
       if (ext.equals("mp3")
         || ext.equals("wav")
@@ -3961,7 +3979,7 @@ public class TWEngine {
                 currentFiles[index].fileext = getExt(f.getName());
   
                 // Get icon
-                if (f.isDirectory()) currentFiles[index].icon = "folder_128";
+                if (f.isDirectory() && !file.getExt(currentFiles[index].filename).equals("sketchio")) currentFiles[index].icon = "folder_128";
                 else currentFiles[index].icon = extIcon(currentFiles[index].fileext);
   
                 // Just a piece of code plonked in for the entries part
@@ -4367,6 +4385,7 @@ public class TWEngine {
     
     private String pluginBoilerplateCode_1 = "";
     private String pluginBoilerplateCode_2 = "";
+    private String exepath;
     private String javapath;
     private int cacheEntry = 0;
 
@@ -4408,7 +4427,8 @@ public class TWEngine {
       // Get the location of java that is currently running our beloved timeway (we will need it
       // for compiling classes)
       String pp = (new File(".").getAbsolutePath());
-      javapath = pp.substring(0, pp.length()-2).replaceAll("\\\\", "/")+"/java";
+      exepath  = pp.substring(0, pp.length()-2).replaceAll("\\\\", "/");
+      javapath = exepath+"/java";
     }
 
     // Actual plugin object
@@ -4665,10 +4685,21 @@ public class TWEngine {
     CmdOutput toClassFile(String inputFile) {
       final String javacPath = javapath+"/bin/javac.exe";
       
-      // TODO: we might not need... this.
-      // If we're not too lazy to create a binding.
-      console.bugWarn("Remember to auto get processingCorePath instead of that specific path on your computer!");
-      final String processingCorePath = "C:/mydata/apps/processing-4.3/core/library/core.jar";
+      // Find the processing core so we can use PApplet in our plugin.
+      // For the dev version (processing ide)
+      String processingCorePath = "";
+      if (file.exists(exepath+"/core/library/core.jar")) {
+        processingCorePath = exepath+"/core/library/core.jar";
+      }
+      // for exported builds
+      else if (file.exists(exepath+"/lib/core.jar")) {
+        processingCorePath = exepath+"/lib/core.jar";
+      }
+      // Uhoh
+      else {
+        console.warn("Could not find Processing core.");
+        return new CmdOutput(1, "Could not find Processing core.");
+      }
       
       // Stored in the cache folder.
       final String pluginPath = CACHE_PATH;
@@ -5399,6 +5430,11 @@ public class TWEngine {
       if (display.showMemUsage) console.log("Memory usage bar shown.");
       else console.log("Memory usage bar hidden.");
     }
+    else if (commandEquals(command, "/sleepmode") || commandEquals(command, "/minimalmode") || commandEquals(command, "/minimizedmode")) {
+      power.allowMinimizedMode = !power.allowMinimizedMode;
+      console.log("Minimized mode "+(power.allowMinimizedMode ? "enabled" : "disabled"));
+    }
+    
     // No commands
     else if (command.length() <= 1) {
       // If empty, do nothing and close the prompt.
@@ -8902,5 +8938,6 @@ public enum FileType {
     FILE_TYPE_MODEL, 
     FILE_TYPE_DOC,
     FILE_TYPE_TIMEWAYENTRY,
-    FILE_TYPE_SHORTCUT
+    FILE_TYPE_SHORTCUT,
+    FILE_TYPE_SKETCHIO
 }

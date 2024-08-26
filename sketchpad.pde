@@ -10,8 +10,9 @@ public class Sketchpad extends Screen {
   private TWEngine.PluginModule.Plugin plugin;
   private FFmpegEngine ffmpeg;
   private String code = "";
-  private boolean compiling = false;
-  private boolean successful = false;
+  private AtomicBoolean compiling = new AtomicBoolean(false);
+  private AtomicBoolean successful = new AtomicBoolean(false);
+  private AtomicBoolean once = new AtomicBoolean(true);
   private SpriteSystemPlaceholder sprites;
   private SpriteSystemPlaceholder gui;
   private PGraphics canvas;
@@ -20,9 +21,9 @@ public class Sketchpad extends Screen {
   private float canvasY = 0.0;
   private float canvasPaneScroll = 0.;
   private float codePaneScroll = 0.;
-  boolean once = true;
   private ArrayList<String> imagesInSketch = new ArrayList<String>();  // This is so that we can know what to remove when we exit this screen.
   private ArrayList<PImage> loadedImages = new ArrayList<PImage>();
+  private JSONObject configJSON = null;
   private AtomicBoolean loading = new AtomicBoolean(true);
   private AtomicInteger processAfterLoadingIndex = new AtomicInteger(0);
   float textAreaZoom = 22.0;
@@ -38,6 +39,9 @@ public class Sketchpad extends Screen {
   private PGraphics scaleCanvas;
   private int renderFrameCount = 0;
   private float renderFramerate = 0.;
+  private float musicVolume = 0.5;
+  private String[] musicFiles = new String[0];
+  private String selectedMusic = "";
   
   private boolean playing = false;
   private boolean loop = false;
@@ -50,6 +54,14 @@ public class Sketchpad extends Screen {
   private float prevCanvasX = 0.;
   private float prevCanvasY = 0.;
   private boolean isDragging = false;
+  
+  // Selected pane
+  private int selectedPane = 0;
+  private int lastSelectedPane = 0;   // Mostly just so I can use the space bar.
+  
+  final static int CANVAS_PANE = 1;
+  final static int CODE_PANE = 2;
+  final static int TIMELINE_PANE = 3;
   
   
   private String[] defaultCode = {
@@ -94,8 +106,23 @@ public class Sketchpad extends Screen {
     
     ffmpeg = new FFmpegEngine();
     
-    sound.streamMusic(engine.APPPATH+"engine/music/test.mp3");
+    lastSelectedPane = CODE_PANE;
+    
+    //sound.streamMusic(engine.APPPATH+"engine/music/test.mp3");
   }
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  ////////////////////////////////////////////////////
+  // SETUP AND LOADING
   
   private void createCanvas(int wi, int hi, int smooth) {
     canvas = createGraphics(wi, hi, P2D);
@@ -140,6 +167,7 @@ public class Sketchpad extends Screen {
     json.setInt("canvas_height", canvas.height);
     json.setInt("smooth", canvasSmooth);
     json.setFloat("time_length", timeLength);
+    json.setString("music_file", selectedMusic);
     
     app.saveJSONObject(json, sketchiePath+"sketch_config.json");
   }
@@ -179,7 +207,7 @@ public class Sketchpad extends Screen {
     return ccode;
   }
   
-  private JSONObject loadedJSON = null;
+  
   private void loadSketchie(String path) {
     imagesInSketch.clear();
     loadedImages.clear();
@@ -188,7 +216,6 @@ public class Sketchpad extends Screen {
     // Undirectorify path
     if (path.charAt(path.length()-1) == '/') {
       path.substring(0, path.length()-1);
-      console.log(path);
     }
     
     if (!file.getExt(path).equals(engine.SKETCHIO_EXTENSION) || !file.isDirectory(path)) {
@@ -200,6 +227,8 @@ public class Sketchpad extends Screen {
     path = file.directorify(path);
     sketchiePath = path;
     
+    //////////////////
+    // IMAGES
     // Load images
     String imgPath = "";
     if (file.exists(path+"imgs")) imgPath = path+"imgs";
@@ -245,7 +274,8 @@ public class Sketchpad extends Screen {
     }
     
     
-    
+    ///////////////////
+    // SPRITES
     // Next: load sprites. Not too hard.
     String spritePath = "";
     if (file.exists(path+"sprites")) spritePath = path+"sprites/";
@@ -259,18 +289,73 @@ public class Sketchpad extends Screen {
     }
     
     
+    //////////////////
+    // SCRIPT
     // And now: script
-    
     input.keyboardMessage = loadScript();
     input.cursorX = input.keyboardMessage.length();
     
-    // Load sketch config
-    if (file.exists(path+"sketch_config.json")) {
-      loadedJSON = loadJSONObject(path+"sketch_config.json");
-      // Need to load the canvas from a seperate thread
+    //////////////////
+    // MUSIC
+    // Load em into a list
+    if (file.exists(path+"music")) {
+      File[] files = (new File(path+"music")).listFiles();
+      musicFiles = new String[files.length];
+      for (int i = 0; i < files.length; i++) {
+        musicFiles[i] = files[i].getName();
+      }
     }
     
+    //////////////////
+    // CONFIG
+    // Load sketch config
+    if (file.exists(path+"sketch_config.json")) {
+      configJSON = loadJSONObject(path+"sketch_config.json");
+      // Need to load the canvas from a seperate thread
+      // But while we're here, now's a good time to set the music file.
+      // and timelength cus why not.
+      timeLength = configJSON.getFloat("time_length", 10.0);
+      selectedMusic = configJSON.getString("music_file", "");
+    }
   }
+  
+  private void compileCode(String code) {
+    Thread t1 = new Thread(new Runnable() {
+      public void run() {
+        compiling.set(true);
+        successful.set(plugin.compile(code));
+        compiling.set(false);
+        once.set(true);
+      }
+    });
+    t1.start();
+  }
+  
+  private void setMusic(String musicFileName) {
+    sound.stopMusic();
+    // Passing "" will stop any music.
+    if (musicFileName.length() == 0) return;
+    
+    String path = sketchiePath+"music/"+musicFileName;
+    if (file.exists(path)) {
+      sound.streamMusic(path);
+    }
+    else {
+      console.warn(musicFileName+" music file not found.");
+      selectedMusic = "";
+    }
+  }
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  //////////////////////////////////////////////
+  // UTIL METHODS STUFF
   
   // methods for use by the API
   public float getTime() {
@@ -288,18 +373,6 @@ public class Sketchpad extends Screen {
     return configMenu || renderMenu || rendering;
   }
   
-  private void compileCode(String code) {
-    Thread t1 = new Thread(new Runnable() {
-      public void run() {
-        compiling = true;
-        successful = plugin.compile(code);
-        compiling = false;
-        once = true;
-      }
-    });
-    t1.start();
-  }
-  
   private void resetView() {
     canvasX = canvas.width*canvasScale*0.5;
     canvasY = canvas.height*canvasScale*0.5;
@@ -311,14 +384,618 @@ public class Sketchpad extends Screen {
     else {
       input.scrollOffset = -1000.;
     }
-    
   }
   
-  private void runCode() {
+  // Creating this funciton because I think the width of
+  // canvas v the code editor will likely change later
+  // and i wanna maintain good code.
+  
+  private boolean codeEditorShown = true;
+  private float middle() {
+    if (codeEditorShown)
+      return WIDTH/2;
+    else
+      return WIDTH;
+  }
+  
+  // Ancient code copied from Timeway it aint my fault pls believe me.
+  private int countNewlines(String t) {
+      int count = 0;
+      for (int i = 0; i < t.length(); i++) {
+          if (t.charAt(i) == '\n') {
+              count++;
+          }
+      }
+      return count;
+  }
+  
+  private float getTextHeight(String txt) {
+    float lineSpacing = 8;
+    return ((app.textAscent()+app.textDescent()+lineSpacing)*float(countNewlines(txt)+1));
+  }
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  ////////////////////////////////////////////
+  // CANVAS & CODE EDITOR
+  
+  private boolean inCanvasPane = false;
+  
+  private void displayCanvas() {
+    if (input.altDown && input.shiftDown && input.keys[int('s')] == 2) {
+      input.backspace();
+      resetView();
+    }
+    
+    boolean menuShown = configMenu || renderMenu;
+    if ((lastSelectedPane == CANVAS_PANE || !codeEditorShown) && input.keyActionOnce("playPause") && !menuShown) {
+       playing = !playing;
+       input.backspace();   // Don't want the unintended space.
+    }
+    
+    // Difficulty: we have 2 scroll areas: canvas zoom, and code editor.
+    // if mouse is in canvas pane
+    boolean canvasPane = input.mouseX() < middle() && !menuShown();
+    if (canvasPane) {
+      if (!inCanvasPane) {
+        inCanvasPane = true;
+        // We need to switch to our scroll value for the zoom
+        codePaneScroll   = input.scrollOffset;     // Update code pane
+        input.scrollOffset = canvasPaneScroll;
+      }
+      input.processScroll(100., 2500.);
+    }
+    
+    float scroll = input.scrollOffset;
+    if (!canvasPane) {
+      scroll = canvasPaneScroll;
+    }
+    // Scroll is negative
+    canvasScale = (2500.+scroll)/1000.;
+    
+    
+    if (canvasPane && sprites.selectedSprite == null && input.mouseY() < HEIGHT-myLowerBarWeight && input.mouseY() > myUpperBarWeight) {
+      if (input.primaryClick && !isDragging && selectedPane == 0) {
+        beginDragX = input.mouseX();
+        beginDragY = input.mouseY();
+        prevCanvasX = canvasX;
+        prevCanvasY = canvasY;
+        isDragging = true;
+        selectedPane = CANVAS_PANE;
+        lastSelectedPane = CANVAS_PANE;
+      }
+    }
+    if (isDragging && selectedPane == CANVAS_PANE) {
+      canvasX = prevCanvasX+(input.mouseX()-beginDragX);
+      canvasY = prevCanvasY+(input.mouseY()-beginDragY);
+      
+      if (!input.primaryDown || sprites.selectedSprite != null) {
+        isDragging = false;
+      }
+    }
+    
+    sprites.setMouseScale(canvasScale, canvasScale);
+    float xx = canvasX-canvas.width*canvasScale*0.5;
+    float yy = canvasY-canvas.height*canvasScale*0.5;
+    sprites.setMouseOffset(xx, yy);
+    
+    app.image(canvas, xx, yy, canvas.width*canvasScale, canvas.height*canvasScale);
+  }
+  
+  private void displayCodeEditor() {
+    // Update scroll for code pane
+    boolean inCodePane = input.mouseX() >= middle();
+    if (inCodePane) {
+      if (inCanvasPane) {
+        inCanvasPane = false;
+        // We need to switch to our scroll value for the code scroll
+        canvasPaneScroll   = input.scrollOffset;     
+        input.scrollOffset = codePaneScroll;
+      }
+      
+      if (input.primaryClick) {
+        lastSelectedPane = CODE_PANE;
+      }
+      
+      input.processScroll(0., max(getTextHeight(code)-(HEIGHT-myUpperBarWeight-myLowerBarWeight), 0));
+    }
+    
+    // Positioning of the text variables
+    // Used to be a function in engine, moved it to here because complications with
+    // scroll, don't care.
+    float x = middle();
+    float y = myUpperBarWeight;
+    float wi = WIDTH-middle(); 
+    float hi = HEIGHT-myUpperBarWeight-myLowerBarWeight;
+    
+    
+    // TODO: I really wanna use our shaders to reduce shader-switching
+    // instead of processing's shaders.
+    app.resetShader();
+    // Draw background
+    app.fill(60);
+    app.noStroke();
+    app.rect(x, y, wi, hi);
+    
+    if (rendering) {
+      // Use the same panel (code editor) for the rendering info.
+    }
+    // All of this is y'know... the actual code editor.
+    else {
+      // make sure code string is sync'd with keyboardmessage
+      if (!menuShown()) code = input.keyboardMessage;
+      
+      // This should really be in the displayCanvas code but it's more convenient to have it here for now.
+      // Damn I'm really giving myself coding debt for adding shortcuts.
+      //boolean shortcuts = input.keyActionOnce("playPause");
+      //if (lastSelectedPane == CANVAS_PANE && shortcuts) {
+      //  input.backspace();   // Don't want the unintended space.
+      //}
+      
+      
+      // ctrl+s save keystroke
+      // Really got to fix this input.keys flaw thing.
+      if (!input.altDown && input.ctrlDown && input.keys[int('s')] == 2) {
+        saveScripts();
+      }
+      
+      
+      // Zoom in/out keys
+      if (input.altDown && input.keys[int('=')] == 2) {
+        textAreaZoom += 2.;
+        input.backspace();
+      }
+      if (input.altDown && input.keys[int('-')] == 2) {
+        textAreaZoom -= 2.;
+        input.backspace();
+      }
+      
+      // Scroll slightly when some y added to text.
+      if (input.enterOnce) {
+        if (getTextHeight(code) > (HEIGHT-myUpperBarWeight-myLowerBarWeight) && inCodePane) {
+          input.scrollOffset -= (textAreaZoom);  // Literally just a random char
+        }
+      }
+      
+      // Slight position offset
+      x += 5;
+      y += 5;
+        
+      // Prepare font
+      app.fill(255);
+      app.textAlign(LEFT, TOP);
+      app.textFont(display.getFont("Source Code"), textAreaZoom);
+      app.textLeading(textAreaZoom);
+      
+      // Scrolling (make sure to keep in account the whole mouse-in-left-or-right pane thing
+      // (god my code is so messy)
+      float scroll = input.scrollOffset;
+      if (!inCodePane) {
+        scroll = codePaneScroll;
+      }
+      
+      // Display text
+      if (!menuShown()) {
+        app.text(input.keyboardMessageDisplay(code), x, y+scroll);
+      }
+      else {
+        app.text(code, x, y+scroll);
+      }
+    }
+  }
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  /////////////////////////////////////// 
+  // MENU
+  
+  TextField widthField  = new TextField("config-width", "Width: ");
+  TextField heightField = new TextField("config-height", "Height: ");
+  TextField timeLengthField = new TextField("config-timelength", "Video length: ");
+  TextField framerateField = new TextField("render-framerate", "Framerate: ");
+  public void displayMenu() {
+    if (menuShown()) {
+      // Bug fix to prevent sprite being selected as we click the menu.
+      if (!loading.get()) sprites.selectedSprite = null;
+    }
+    
+    //////////////////
+    // CONFIG MENU
+    //////////////////
+    if (configMenu) {
+      
+      // Background
+      gui.sprite("config-back-1", "black");
+      
+      // Title
+      textSprite("config-menu-title", "--- Sketch config ---");
+      
+      
+      
+      app.fill(255);
+      
+      // Width field
+      widthField.display();
+      
+      // Height field
+      heightField.display();
+      
+      // Time length field
+      timeLengthField.display();
+      // Lil button next to timelength field to sync time to music
+      if (ui.button("config-syncmusictime", "music_time_128", "")) {
+        selectedField = null;
+        sound.playSound("select_any");
+        timeLengthField.value = str(sound.getCurrentMusicDuration());
+        //try {
+        //  String musicPath = sketchiePath+"music/"+selectedMusic;
+        //  if (selectedMusic.length() > 0 && file.exists(musicPath)) {
+        //    Movie music = new Movie(app, musicPath);
+        //    music.read();
+        //    timeLengthField.value = str(music.duration());
+        //  }
+        //}
+        //catch (RuntimeException e) {
+        //  console.warn("Sound duration get failed. "+e.getMessage());
+        //}
+      }
+      
+      // Anti-aliasing field
+      String smoothDisp = "Anti-aliasing: ";
+      switch (canvasSmooth) {
+        case 0:
+        smoothDisp += "None (pixelated)";
+        break;
+        case 1:
+        smoothDisp += "1x";
+        break;
+        case 2:
+        smoothDisp += "2x";
+        break;
+        case 4:
+        smoothDisp += "4x";
+        break;
+        case 8:
+        smoothDisp += "8x";
+        break;
+      }
+      
+      if (textSprite("config-smooth", smoothDisp) && !ui.miniMenuShown()) {
+        String[] labels = new String[5];
+        Runnable[] actions = new Runnable[5];
+        
+        labels[0] = "None (pixelated)";
+        actions[0] = new Runnable() {public void run() { canvasSmooth = 0; }};
+        
+        labels[1] = "1x anti-aliasing";
+        actions[1] = new Runnable() {public void run() { canvasSmooth = 1; }};
+        
+        labels[2] = "2x anti-aliasing";
+        actions[2] = new Runnable() {public void run() { canvasSmooth = 2; }};
+        
+        labels[3] = "4x anti-aliasing";
+        actions[3] = new Runnable() {public void run() { canvasSmooth = 4; }};
+        
+        labels[4] = "8x anti-aliasing";
+        actions[4] = new Runnable() {public void run() { canvasSmooth = 8; }};
+        
+        
+        ui.createOptionsMenu(labels, actions);
+      }
+      
+      
+      String musicDisp = (musicFiles.length > 0 ? selectedMusic : "(no files available)");
+      if (selectedMusic.length() == 0) musicDisp = "(None)";
+      if (textSprite("config-music", "Music: "+musicDisp) && !ui.miniMenuShown()) {
+        if (musicFiles.length > 0) {
+          String[] labels = new String[musicFiles.length+1];
+          Runnable[] actions = new Runnable[musicFiles.length+1];
+          
+          // None option
+          labels[0] = "(None)";
+          actions[0] = new Runnable() {public void run() { selectedMusic = ""; }};
+          
+          for (int i = 0; i < musicFiles.length; i++) {
+            final int index = i;
+            labels[i+1]  = musicFiles[i];
+            actions[i+1] = new Runnable() {
+              public void run() { 
+                selectedMusic = musicFiles[index]; 
+                setMusic(selectedMusic);
+              }
+            };
+          }
+          
+          ui.createOptionsMenu(labels, actions);
+        }
+      }
+      
+      // Cross button
+      if (ui.button("config-cross-1", "cross", "")) {
+        sound.playSound("select_smaller");
+        input.keyboardMessage = code;
+        configMenu = false;
+      }
+      
+      // Apply button
+      if (ui.button("config-ok", "tick_128", "Apply")) {
+        sound.playSound("select_any");
+        time = 0.;
+        
+        try {
+          int wi = Integer.parseInt(widthField.value);
+          int hi = Integer.parseInt(heightField.value);
+          timeLength = Float.parseFloat(timeLengthField.value)*60.;
+          
+          createCanvas(wi, hi, canvasSmooth);
+        }
+        catch (NumberFormatException e) {
+          console.log("Invalid inputs!");
+          return;
+        }
+        //setMusic(selectedMusic);
+        
+        
+        saveConfig();
+        
+        // End
+        input.keyboardMessage = code;
+        configMenu = false;
+      }
+    }
+    
+    
+    /////////////////////
+    // RENDER MENU
+    /////////////////////
+    else if (renderMenu) {
+      
+      // Background
+      gui.sprite("render-back-1", "black");
+      
+      // Title
+      textSprite("render-menu-title", "--- Render ---");
+      
+      // Framerate field
+      framerateField.display();
+      
+      // That massive block below is indeed the
+      // compression field.
+      String compressionDisp = "Compression: "+renderFormat;
+      if (textSprite("render-compression", compressionDisp) && !ui.miniMenuShown()) {
+        String[] labels = new String[6];
+        Runnable[] actions = new Runnable[6];
+        
+        labels[0] = "MPEG-4";
+        actions[0] = new Runnable() {public void run() { renderFormat = labels[0]; }};
+        
+        labels[1] = "MPEG-4 (Lossless 4:2:0)";
+        actions[1] = new Runnable() {public void run() { renderFormat = labels[1]; }};
+        
+        labels[2] = "MPEG-4 (Lossless (4:4:4)";
+        actions[2] = new Runnable() {public void run() { renderFormat = labels[2]; }};
+        
+        labels[3] = "Apple ProRes 4444";
+        actions[3] = new Runnable() {public void run() { renderFormat = labels[3]; }};
+        
+        labels[4] = "Animated GIF";
+        actions[4] = new Runnable() {public void run() { renderFormat = labels[4]; }};
+        
+        labels[5] = "Animated GIF (Loop)";
+        actions[5] = new Runnable() {public void run() { renderFormat = labels[5]; }};
+        
+        ui.createOptionsMenu(labels, actions);
+      }
+      
+      // Pixel upscale field
+      String upscaleDisp = "Pixel upscale: "+int(upscalePixels*100.)+"% "+(upscalePixels == 1. ? "(None)" : "");
+      
+      if (textSprite("render-upscale", upscaleDisp) && !ui.miniMenuShown()) {
+        String[] labels = new String[6];
+        Runnable[] actions = new Runnable[6];
+        
+        labels[0] = "25%";
+        actions[0] = new Runnable() {public void run() { upscalePixels = 0.25; }};
+        
+        labels[1] = "50%";
+        actions[1] = new Runnable() {public void run() { upscalePixels = 0.5; }};
+        
+        labels[2] = "100% (None)";
+        actions[2] = new Runnable() {public void run() { upscalePixels = 1.; }};
+        
+        labels[3] = "200%";
+        actions[3] = new Runnable() {public void run() { upscalePixels = 2.; }};
+        
+        labels[4] = "300%";
+        actions[4] = new Runnable() {public void run() { upscalePixels = 3.; }};
+        
+        labels[5] = "400%";
+        actions[5] = new Runnable() {public void run() { upscalePixels = 4.; }};
+        
+        ui.createOptionsMenu(labels, actions);
+      }
+      
+      
+      // Start rendering button
+      if (ui.button("render-ok", "tick_128", "Start rendering")) {
+        sound.playSound("select_any");
+        try {
+          renderFramerate = Float.parseFloat(framerateField.value);
+        }
+        catch (NumberFormatException e) {
+          console.log("Invalid inputs!");
+          return;
+        }
+        
+        beginRendering();
+        input.keyboardMessage = code;
+        renderMenu = false;
+      }
+      
+      // Close menu button
+      if (ui.button("render-cross-1", "cross", "")) {
+        sound.playSound("select_smaller");
+        input.keyboardMessage = code;
+        renderMenu = false;
+      }
+    }
+  }
+  
+  /////////////////////////////////////////////////
+  // TEXT FIELD CLASS
+  /////////////////////////////////////////////////
+  TextField selectedField = null;
+  class TextField {
+    private String spriteName = "";
+    public String value = "";
+    private String labelDisplay = "";
+    
+    public TextField(String spriteName, String labelDisplay) {
+      this.spriteName = spriteName;
+      this.labelDisplay = labelDisplay;
+    }
+    
+    public void display() {
+      String disp = gui.interactable ? "white" : "nothing";
+      if (selectedField == this) {
+        gui.sprite(spriteName, disp);
+        value = input.keyboardMessage;
+      }
+      else {
+        if (ui.button(spriteName, disp, "")) {
+          selectedField = this;
+          input.keyboardMessage = value;
+          input.cursorX = input.keyboardMessage.length();
+        }
+      }
+      
+      float x = gui.getSprite(spriteName).getX();
+      float y = gui.getSprite(spriteName).getY();
+      
+      
+      app.textAlign(LEFT, TOP);
+      app.textSize(32);
+      if (selectedField == this) {
+        app.text(labelDisplay+input.keyboardMessageDisplay(value), x, y);
+      }
+      else {
+        app.text(labelDisplay+value, x, y);
+      }
+    }
+  }
+  
+  public boolean textSprite(String name, String val) {
+    String disp = gui.interactable ? "white" : "nothing";
+    boolean clicked = ui.button(name, disp, "");
+    
+    float x = gui.getSprite(name).getX();
+    float y = gui.getSprite(name).getY();
+    
+    app.textAlign(LEFT, TOP);
+    app.textSize(32);
+    app.text(val, x, y);
+    return clicked;
+  }
+  
+  
+  
+  
+  
+  
+  ///////////////////////////////////////////////
+  // RENDERING
+  
+  private void beginRendering() {
+    // Don't even bother if our code is not working
+    if (!successful.get()) {
+      console.log("Fix compilation errors before rendering!");
+      return;
+    }
+    
+    // Check frames folder
+    // Using File class cus we need to make dir if it dont exist
+    String framesPath = engine.APPPATH+"frames/";
+    console.log(framesPath);
+    File f = new File(framesPath);
+    if (!f.exists()) {
+      f.mkdir();
+    }
+    
+    // Create our canvases (absolutely no scaling allowed)
+    shaderCanvas = createGraphics(canvas.width, canvas.height, P2D);
+    ((PGraphicsOpenGL)shaderCanvas).textureSampling(2);   // Disable texture smoothing
+    
+    if (upscalePixels != 1.) {
+      scaleCanvas = createGraphics(int(canvas.width*upscalePixels), int(canvas.height*upscalePixels), P2D);
+      ((PGraphicsOpenGL)scaleCanvas).textureSampling(2);   // Disable texture smoothing
+    }
+    
+    // set our variables
+    time = 0.0;
+    renderFrameCount = 0;
+    power.allowMinimizedMode = false;
+    playing = true;
+    
+    // Give a little bit of time so the UI can disappear for better user feedback.
+    timeBeforeStartingRender = 5;
+    
+    // Now we begin.
+    rendering = true;
+  }
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  ///////////////////////////////////////////////////////
+  // THE MOST IMPORTANT STUFF
+  
+  private void runCanvas() {
     // Display compilation status
-    if (!compiling && once) {
-      once = false;
-      if (!successful) {
+    if (!compiling.get() && once.compareAndSet(true, false)) {
+      if (!successful.get()) {
         console.log(plugin.errorOutput);
         playing = false;
       }
@@ -337,7 +1014,7 @@ public class Sketchpad extends Screen {
     sprites.setDelta(getDelta());
     
     // Switch canvas, then begin running the plugin code
-    if (successful && !compiling) {
+    if (successful.get() && !compiling.get()) {
       canvas.beginDraw();
       canvas.fill(255, 255);
       display.setPGraphics(canvas);
@@ -365,7 +1042,7 @@ public class Sketchpad extends Screen {
     }
     
     // The actual part where we render our animation
-    if (rendering && !converting && successful && !compiling) {
+    if (rendering && !converting && successful.get() && !compiling.get()) {
       // This path has already been created so it will DEFO work
       String frame = engine.APPPATH+"frames/"+nf(renderFrameCount++, 6, 0)+".tiff";
       
@@ -414,508 +1091,12 @@ public class Sketchpad extends Screen {
     }
   }
   
-  // Creating this funciton because I think the width of
-  // canvas v the code editor will likely change later
-  // and i wanna maintain good code.
-  private float middle() {
-    return WIDTH/2;
-  }
-  
-  boolean inCanvasPane = false;
-  
-  private void displayCanvas() {
-    if (input.altDown && input.shiftDown && input.keys[int('s')] == 2) {
-      input.backspace();
-      resetView();
-    }
-    
-    // Difficulty: we have 2 scroll areas: canvas zoom, and code editor.
-    // if mouse is in canvas pane
-    boolean canvasPane = input.mouseX() < middle() && !menuShown();
-    if (canvasPane) {
-      if (!inCanvasPane) {
-        inCanvasPane = true;
-        // We need to switch to our scroll value for the zoom
-        codePaneScroll   = input.scrollOffset;     // Update code pane
-        input.scrollOffset = canvasPaneScroll;
-      }
-      input.processScroll(100., 2500.);
-    }
-    
-    float scroll = input.scrollOffset;
-    if (!canvasPane) {
-      scroll = canvasPaneScroll;
-    }
-    // Scroll is negative
-    canvasScale = (2500.+scroll)/1000.;
-    
-    
-    if (canvasPane && sprites.selectedSprite == null && input.mouseY() < HEIGHT-myLowerBarWeight && input.mouseY() > myUpperBarWeight) {
-      if (input.primaryDown && !isDragging) {
-        beginDragX = input.mouseX();
-        beginDragY = input.mouseY();
-        prevCanvasX = canvasX;
-        prevCanvasY = canvasY;
-        isDragging = true;
-      }
-    }
-    if (isDragging) {
-      canvasX = prevCanvasX+(input.mouseX()-beginDragX);
-      canvasY = prevCanvasY+(input.mouseY()-beginDragY);
-      
-      if (!input.primaryDown || sprites.selectedSprite != null) {
-        isDragging = false;
-      }
-    }
-    
-    sprites.setMouseScale(canvasScale, canvasScale);
-    float xx = canvasX-canvas.width*canvasScale*0.5;
-    float yy = canvasY-canvas.height*canvasScale*0.5;
-    sprites.setMouseOffset(xx, yy);
-    
-    app.image(canvas, xx, yy, canvas.width*canvasScale, canvas.height*canvasScale);
-  }
-  
-  // Ancient code copied from Timeway it aint my fault pls believe me.
-  private int countNewlines(String t) {
-      int count = 0;
-      for (int i = 0; i < t.length(); i++) {
-          if (t.charAt(i) == '\n') {
-              count++;
-          }
-      }
-      return count;
-  }
-  
-  private float getTextHeight(String txt) {
-    float lineSpacing = 8;
-    return ((app.textAscent()+app.textDescent()+lineSpacing)*float(countNewlines(txt)+1));
-  }
-  
-  private void displayCodeEditor() {
-    // Update scroll for code pane
-    boolean inCodePane = input.mouseX() >= middle();
-    if (inCodePane) {
-      if (inCanvasPane) {
-        inCanvasPane = false;
-        // We need to switch to our scroll value for the code scroll
-        canvasPaneScroll   = input.scrollOffset;     
-        input.scrollOffset = codePaneScroll;
-      }
-      
-      input.processScroll(0., max(getTextHeight(code)-(HEIGHT-myUpperBarWeight-myLowerBarWeight), 0));
-    }
-    
-    // Positioning of the text variables
-    // Used to be a function in engine, moved it to here because complications with
-    // scroll, don't care.
-    float x = middle();
-    float y = myUpperBarWeight;
-    float wi = WIDTH-middle(); 
-    float hi = HEIGHT-myUpperBarWeight-myLowerBarWeight;
-    
-    
-    // TODO: I really wanna use our shaders to reduce shader-switching
-    // instead of processing's shaders.
-    app.resetShader();
-    // Draw background
-    app.fill(60);
-    app.noStroke();
-    app.rect(x, y, wi, hi);
-    
-    if (rendering) {
-      // Use the same panel (code editor) for the rendering info.
-    }
-    // All of this is y'know... the actual code editor.
-    else {
-      // make sure code string is sync'd with keyboardmessage
-      if (!menuShown()) code = input.keyboardMessage;
-      
-      
-      // ctrl+s save keystroke
-      // Really got to fix this input.keys flaw thing.
-      if (!input.altDown && input.ctrlDown && input.keys[int('s')] == 2) {
-        saveScripts();
-      }
-      
-      // Set engine typing settings.
-      input.addNewlineWhenEnterPressed = true;
-      engine.allowShowCommandPrompt = false;
-      
-      
-      // Zoom in/out keys
-      if (input.altDown && input.keys[int('=')] == 2) {
-        textAreaZoom += 2.;
-        input.backspace();
-      }
-      if (input.altDown && input.keys[int('-')] == 2) {
-        textAreaZoom -= 2.;
-        input.backspace();
-      }
-      
-      // Scroll slightly when some y added to text.
-      if (input.enterOnce) {
-        if (getTextHeight(code) > (HEIGHT-myUpperBarWeight-myLowerBarWeight) && inCodePane) {
-          input.scrollOffset -= (textAreaZoom);  // Literally just a random char
-        }
-      }
-      
-      // Slight position offset
-      x += 5;
-      y += 5;
-        
-      // Prepare font
-      app.fill(255);
-      app.textAlign(LEFT, TOP);
-      app.textFont(display.getFont("Source Code"), textAreaZoom);
-      app.textLeading(textAreaZoom);
-      
-      // Scrolling (make sure to keep in account the whole mouse-in-left-or-right pane thing
-      // (god my code is so messy)
-      float scroll = input.scrollOffset;
-      if (!inCodePane) {
-        scroll = codePaneScroll;
-      }
-      
-      // Display text
-      if (!menuShown()) {
-        app.text(input.keyboardMessageDisplay(code), x, y+scroll);
-      }
-      else {
-        app.text(code, x, y+scroll);
-      }
-    }
-  }
-  
-  TextField selectedField = null;
-  class TextField {
-    private String spriteName = "";
-    public String value = "";
-    private String labelDisplay = "";
-    
-    public TextField(String spriteName, String labelDisplay) {
-      this.spriteName = spriteName;
-      this.labelDisplay = labelDisplay;
-    }
-    
-    public void display() {
-      String disp = gui.interactable ? "white" : "nothing";
-      if (selectedField == this) {
-        gui.sprite(spriteName, disp);
-        value = input.keyboardMessage;
-      }
-      else {
-        if (ui.button(spriteName, disp, "")) {
-          selectedField = this;
-          input.keyboardMessage = value;
-        }
-      }
-      
-      float x = gui.getSprite(spriteName).getX();
-      float y = gui.getSprite(spriteName).getY();
-      
-      
-      app.textAlign(LEFT, TOP);
-      app.textSize(32);
-      if (selectedField == this) {
-        app.text(labelDisplay+input.keyboardMessageDisplay(value), x, y);
-      }
-      else {
-        app.text(labelDisplay+value, x, y);
-      }
-    }
-  }
-  
-  
-  
-  public boolean textSprite(String name, String val) {
-    String disp = gui.interactable ? "white" : "nothing";
-    boolean clicked = ui.button(name, disp, "");
-    
-    float x = gui.getSprite(name).getX();
-    float y = gui.getSprite(name).getY();
-    
-    app.textAlign(LEFT, TOP);
-    app.textSize(32);
-    app.text(val, x, y);
-    return clicked;
-  }
-  
-  
-  TextField widthField  = new TextField("config-width", "Width: ");
-  TextField heightField = new TextField("config-height", "Height: ");
-  TextField timeLengthField = new TextField("config-timelength", "Video length: ");
-  TextField framerateField = new TextField("render-framerate", "Framerate: ");
-  public void displayMenu() {
-    if (menuShown()) {
-      // Bug fix to prevent sprite being selected as we click the menu.
-      if (!loading.get()) sprites.selectedSprite = null;
-    }
-    
-    // All config menu stuff
-    if (configMenu) {
-      
-      gui.sprite("config-back-1", "black");
-      
-      textSprite("config-menu-title", "--- Sketch config ---");
-      
-      
-      // Width and height fields
-      app.fill(255);
-      widthField.display();
-      heightField.display();
-      timeLengthField.display();
-      
-      String smoothDisp = "Anti-aliasing: ";
-      switch (canvasSmooth) {
-        case 0:
-        smoothDisp += "None (pixelated)";
-        break;
-        case 1:
-        smoothDisp += "1x";
-        break;
-        case 2:
-        smoothDisp += "2x";
-        break;
-        case 4:
-        smoothDisp += "4x";
-        break;
-        case 8:
-        smoothDisp += "8x";
-        break;
-      }
-      
-      if (textSprite("config-smooth", smoothDisp) && !ui.miniMenuShown()) {
-        String[] labels = new String[5];
-        Runnable[] actions = new Runnable[5];
-        
-        labels[0] = "None (pixelated)";
-        actions[0] = new Runnable() {public void run() { canvasSmooth = 0; }};
-        
-        labels[1] = "1x anti-aliasing";
-        actions[1] = new Runnable() {public void run() { canvasSmooth = 1; }};
-        
-        labels[2] = "2x anti-aliasing";
-        actions[2] = new Runnable() {public void run() { canvasSmooth = 2; }};
-        
-        labels[3] = "4x anti-aliasing";
-        actions[3] = new Runnable() {public void run() { canvasSmooth = 4; }};
-        
-        labels[4] = "8x anti-aliasing";
-        actions[4] = new Runnable() {public void run() { canvasSmooth = 8; }};
-        
-        
-        ui.createOptionsMenu(labels, actions);
-      }
-      
-      
-      if (ui.button("config-cross-1", "cross", "")) {
-        input.keyboardMessage = code;
-        configMenu = false;
-      }
-      
-      if (ui.button("config-ok", "tick_128", "Apply")) {
-        time = 0.;
-        
-        try {
-          int wi = Integer.parseInt(widthField.value);
-          int hi = Integer.parseInt(heightField.value);
-          timeLength = Float.parseFloat(timeLengthField.value)*60.;
-          
-          createCanvas(wi, hi, canvasSmooth);
-        }
-        catch (NumberFormatException e) {
-          console.log("Invalid inputs!");
-          return;
-        }
-        
-        saveConfig();
-        
-        // End
-        input.keyboardMessage = code;
-        configMenu = false;
-      }
-    }
-    
-    // We only ever show one of these menu's at a time.
-    else if (renderMenu) {
-      
-      gui.sprite("render-back-1", "black");
-      
-      textSprite("render-menu-title", "--- Render ---");
-      
-      framerateField.display();
-      
-      String compressionDisp = "Compression: "+renderFormat;
-      
-      if (textSprite("render-compression", compressionDisp) && !ui.miniMenuShown()) {
-        String[] labels = new String[6];
-        Runnable[] actions = new Runnable[6];
-        
-        labels[0] = "MPEG-4";
-        actions[0] = new Runnable() {public void run() { renderFormat = labels[0]; }};
-        
-        labels[1] = "MPEG-4 (Lossless 4:2:0)";
-        actions[1] = new Runnable() {public void run() { renderFormat = labels[1]; }};
-        
-        labels[2] = "MPEG-4 (Lossless (4:4:4)";
-        actions[2] = new Runnable() {public void run() { renderFormat = labels[2]; }};
-        
-        labels[3] = "Apple ProRes 4444";
-        actions[3] = new Runnable() {public void run() { renderFormat = labels[3]; }};
-        
-        labels[4] = "Animated GIF";
-        actions[4] = new Runnable() {public void run() { renderFormat = labels[4]; }};
-        
-        labels[5] = "Animated GIF (Loop)";
-        actions[5] = new Runnable() {public void run() { renderFormat = labels[5]; }};
-        
-        ui.createOptionsMenu(labels, actions);
-      }
-      
-      
-      String upscaleDisp = "Pixel upscale: "+int(upscalePixels*100.)+"% "+(upscalePixels == 1. ? "(None)" : "");
-      
-      if (textSprite("render-upscale", upscaleDisp) && !ui.miniMenuShown()) {
-        String[] labels = new String[6];
-        Runnable[] actions = new Runnable[6];
-        
-        labels[0] = "25%";
-        actions[0] = new Runnable() {public void run() { upscalePixels = 0.25; }};
-        
-        labels[1] = "50%";
-        actions[1] = new Runnable() {public void run() { upscalePixels = 0.5; }};
-        
-        labels[2] = "100% (None)";
-        actions[2] = new Runnable() {public void run() { upscalePixels = 1.; }};
-        
-        labels[3] = "200%";
-        actions[3] = new Runnable() {public void run() { upscalePixels = 2.; }};
-        
-        labels[4] = "300%";
-        actions[4] = new Runnable() {public void run() { upscalePixels = 3.; }};
-        
-        labels[5] = "400%";
-        actions[5] = new Runnable() {public void run() { upscalePixels = 4.; }};
-        
-        ui.createOptionsMenu(labels, actions);
-      }
-      
-      
-      if (ui.button("render-ok", "tick_128", "Start rendering")) {
-        try {
-          renderFramerate = Float.parseFloat(framerateField.value);
-        }
-        catch (NumberFormatException e) {
-          console.log("Invalid inputs!");
-          return;
-        }
-        
-        beginRendering();
-        input.keyboardMessage = code;
-        renderMenu = false;
-      }
-      
-      if (ui.button("render-cross-1", "cross", "")) {
-        input.keyboardMessage = code;
-        renderMenu = false;
-      }
-    }
-  }
-  
-  private void beginRendering() {
-    // Don't even bother if our code is not working
-    if (!successful) {
-      console.log("Fix compilation errors before rendering!");
-      return;
-    }
-    
-    // Check frames folder
-    // Using File class cus we need to make dir if it dont exist
-    String framesPath = engine.APPPATH+"frames/";
-    console.log(framesPath);
-    File f = new File(framesPath);
-    if (!f.exists()) {
-      f.mkdir();
-    }
-    
-    // Create our canvases (absolutely no scaling allowed)
-    shaderCanvas = createGraphics(canvas.width, canvas.height, P2D);
-    ((PGraphicsOpenGL)shaderCanvas).textureSampling(2);   // Disable texture smoothing
-    
-    if (upscalePixels != 1.) {
-      scaleCanvas = createGraphics(int(canvas.width*upscalePixels), int(canvas.height*upscalePixels), P2D);
-      ((PGraphicsOpenGL)scaleCanvas).textureSampling(2);   // Disable texture smoothing
-    }
-    
-    // set our variables
-    time = 0.0;
-    renderFrameCount = 0;
-    power.allowMinimizedMode = false;
-    playing = true;
-    
-    // Give a little bit of time so the UI can disappear for better user feedback.
-    timeBeforeStartingRender = 5;
-    
-    // Now we begin.
-    rendering = true;
-  }
-  
-  // Calls our cool and totally not stolen createMovie function
-  // and runs ffmpeg
-  private void beginConversion() {
-    int wi = canvas.width;
-    int hi = canvas.height;
-    if (upscalePixels != 1.) {
-      wi = scaleCanvas.width;
-      hi = scaleCanvas.height;
-    }
-    
-    // create output folder if it don't exist.
-    String outputFolder = engine.APPPATH+"output/";
-    
-    int outIndex = 1;
-    // Note that files are named as:
-    // 0001.mp4
-    // 0002.mp4
-    // 0003.gif
-    // etc
-    // This is so we can save our animation without
-    // replacing any files that may already exist in this folder.
-    
-    File f = new File(outputFolder);
-    if (!f.exists()) {
-      f.mkdir();
-    }
-    else {
-      File[] files = f.listFiles();
-      // Find the highest number count.
-      int highest = 0;
-      for (File ff : files) {
-        // Not to worry if it's a string like "aaa", processing's
-        // int() just returns 0 if that's the case.
-        int num = int(file.getIsolatedFilename(ff.getName()));
-        if (num > highest) {
-          highest = num;
-        }
-      }
-      // Now we have the highest
-      outIndex = highest+1;
-    }
-    
-    // Annnnnd the extension
-    String ext = ".mp4";
-    if (renderFormat.contains("GIF")) ext = ".gif";
-    else if (renderFormat.contains("Apple")) ext = ".mov";
-    
-    converting = true;
-    ffmpeg.framecount = 0;
-    createMovie(outputFolder+nf(outIndex, 4, 0)+ext, "", engine.APPPATH+"frames/", wi, hi, (double)renderFramerate, renderFormat);
-  }
-  
-  
   public void content() {
     power.setAwake();
+    
+    // Set engine typing settings.
+    input.addNewlineWhenEnterPressed = codeEditorShown;
+    engine.allowShowCommandPrompt = !codeEditorShown;
     
     if (!loading.get()) {
       if (processAfterLoadingIndex.get() > 0) {
@@ -930,21 +1111,37 @@ public class Sketchpad extends Screen {
         display.systemImages.put(imagesInSketch.get(i), new DImage(largeimg, loadedImages.get(i)));
         
         if (i == 0) {
-          if (loadedJSON != null) {
-            timeLength = loadedJSON.getFloat("time_length", 10.0);
-            canvasSmooth = loadedJSON.getInt("smooth", 1);
-            createCanvas(loadedJSON.getInt("canvas_width", 1024), loadedJSON.getInt("canvas_height", 1024), canvasSmooth);
+          if (configJSON != null) {
+            canvasSmooth = configJSON.getInt("smooth", 1);
+            createCanvas(configJSON.getInt("canvas_width", 1024), configJSON.getInt("canvas_height", 1024), canvasSmooth);
+            setMusic(selectedMusic);
           }
           
           compileCode(code);
         }
       }
       
-      runCode();
+      runCanvas();
       displayCanvas();
-      displayCodeEditor();
       
+      if (codeEditorShown) {
+        displayCodeEditor();
+      }
+      
+      if (!input.primaryDown) {
+        selectedPane = 0;
+      }
+      
+      // we "stop" the music by simply muting the audio, in the background it's still playing tho,
+      // but it makes coding a lot more simple.
+      if (playing && !rendering) {
+        sound.setMusicVolume(musicVolume);
+      }
+      else {
+        sound.setMusicVolume(0.);
+      }
       sound.syncMusic(time/60.);
+      
     }
     else {
       ui.loadingIcon(WIDTH/4, HEIGHT/2);
@@ -969,6 +1166,7 @@ public class Sketchpad extends Screen {
         ui.loadingIcon(WIDTH*0.75, HEIGHT/2);
         textSprite("renderinginfoscreen-txt1", "Rendering sketch...\nStage 1/2");
         if (ui.button("renderinginfoscreen-cancel", "cross_128", "Stop rendering")) {
+          sound.playSound("select_smaller");
           playing = false;
           rendering = false;
           power.allowMinimizedMode = true;
@@ -992,11 +1190,26 @@ public class Sketchpad extends Screen {
     
     if (!menuShown()) {
       if (ui.button("compile_button", "media_128", "Compile")) {
-        saveScripts();
-        compileCode(loadScript());
+        // Don't allow to compile if it's already compiling
+        // (cus we gonna end up with threading issues!)
+        if (!compiling.get()) {
+          sound.playSound("select_any");
+          // If not showing code editor, we are most likely using an external ide to program this.
+          // So do not save what we have in memory.
+          if (codeEditorShown) {
+            saveScripts();
+          }
+          compileCode(loadScript());
+        } 
+      }
+      
+      if (ui.button("showcode_button", "code_128", codeEditorShown ? "Hide code" : "Show code")) {
+        sound.playSound("select_any");
+        codeEditorShown = !codeEditorShown;
       }
       
       if (ui.button("settings_button", "doc_128", "Sketch config")) {
+        sound.playSound("select_any");
         widthField.value = str(canvas.width);
         heightField.value = str(canvas.height);
         timeLengthField.value = str(timeLength/60.);
@@ -1006,19 +1219,34 @@ public class Sketchpad extends Screen {
       }
       
       if (ui.button("render_button", "image_128", "Render")) {
+        sound.playSound("select_any");
         selectedField = null;
         framerateField.value = "60";
         renderMenu = true;
         input.keyboardMessage = "";
       }
       
+      if (ui.button("folder_button", "folder_128", "Show files")) {
+        sound.playSound("select_any");
+        playing = false;
+        file.open(sketchiePath);
+      }
+      
       if (ui.button("back_button", "back_arrow_128", "Explorer")) {
-        saveScripts();
+        sound.playSound("select_any");
+        sound.stopMusic();
+        
+        // TODO: really need some sort of file change detection instead of relying on the
+        // editor being hidden to know whether or not we have an outdated version in memory.
+        if (codeEditorShown) {
+          saveScripts();
+          sound.playSound("chime");
+        }
         previousScreen();
       }
       
-      if (compiling) {
-        ui.loadingIcon(WIDTH-myUpperBarWeight/2-10, myUpperBarWeight/2, myUpperBarWeight);
+      if (compiling.get()) {
+        ui.loadingIcon(WIDTH-64-10, myUpperBarWeight+64+10, 128);
       }
     }
     else {
@@ -1028,8 +1256,13 @@ public class Sketchpad extends Screen {
     gui.updateSpriteSystem();
   }
   
+  private boolean selectedPaneTimeline() {
+    return !rendering && (selectedPane == 0 || selectedPane == TIMELINE_PANE);
+  }
+  
   public void lowerBar() {
-    display.shader("fabric", "color", 0.43,0.4,0.42,1., "intensity", 0.1);
+    //display.shader("fabric", "color", 0.43,0.4,0.42,1., "intensity", 0.1);
+    myLowerBarColor = color(78, 73, 73);
     super.lowerBar();
     app.resetShader();
     
@@ -1050,24 +1283,29 @@ public class Sketchpad extends Screen {
     
     display.imgCentre(playing ? "pause_128" : "play_128", BAR_X_START/2, y+(myLowerBarWeight/2), myLowerBarWeight, myLowerBarWeight);
     
-    if (input.mouseY() > y && !ui.miniMenuShown()) {
+    if ((input.mouseY() > y || selectedPane == TIMELINE_PANE) && !ui.miniMenuShown()) {
       if (input.mouseX() > BAR_X_START) {
         // If in bar zone
-        if (input.primaryDown && !rendering) {
+        if (input.primaryDown && selectedPaneTimeline()) {
           float notchPercent = min(max((input.mouseX()-BAR_X_START)/BAR_X_LENGTH, 0.), 1.);
           time = timeLength*notchPercent;
+        }
+        
+        // Messy code over there so it only acts once
+        if (input.primaryClick) {
+          selectedPane = TIMELINE_PANE;
         }
       }
       else {
         // If in play button area
-        if (input.primaryClick && !rendering) {
+        if (input.primaryClick && selectedPaneTimeline()) {
           // Toggle play/pause button
           playing = !playing;
           // Restart if at end
           if (playing && time > timeLength) time = 0.;
         }
         // Right click action to show minimenu
-        else if (input.secondaryClick && !rendering) {
+        else if (input.secondaryClick && selectedPaneTimeline()) {
           String[] labels = new String[1];
           Runnable[] actions = new Runnable[1];
           
@@ -1082,6 +1320,24 @@ public class Sketchpad extends Screen {
     }
   }
   
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  /////////////////////////////////////////////////
+  // FFMPEG STUFF
+  // (mostly stolen from MovieMaker source code lol
   
   
   // Literally copy+pasted straight from processing code.
@@ -1170,10 +1426,70 @@ public class Sketchpad extends Screen {
   }
   
   
+  // Calls our cool and totally not stolen createMovie function
+  // and runs ffmpeg
+  private void beginConversion() {
+    int wi = canvas.width;
+    int hi = canvas.height;
+    if (upscalePixels != 1.) {
+      wi = scaleCanvas.width;
+      hi = scaleCanvas.height;
+    }
+    
+    // create output folder if it don't exist.
+    String outputFolder = engine.APPPATH+"output/";
+    
+    int outIndex = 1;
+    // Note that files are named as:
+    // 0001.mp4
+    // 0002.mp4
+    // 0003.gif
+    // etc
+    // This is so we can save our animation without
+    // replacing any files that may already exist in this folder.
+    
+    File f = new File(outputFolder);
+    if (!f.exists()) {
+      f.mkdir();
+    }
+    else {
+      File[] files = f.listFiles();
+      // Find the highest number count.
+      int highest = 0;
+      for (File ff : files) {
+        // Not to worry if it's a string like "aaa", processing's
+        // int() just returns 0 if that's the case.
+        int num = int(file.getIsolatedFilename(ff.getName()));
+        if (num > highest) {
+          highest = num;
+        }
+      }
+      // Now we have the highest
+      outIndex = highest+1;
+    }
+    
+    // Annnnnd the extension
+    String ext = ".mp4";
+    if (renderFormat.contains("GIF")) ext = ".gif";
+    else if (renderFormat.contains("Apple")) ext = ".mov";
+    
+    converting = true;
+    ffmpeg.framecount = 0;
+    
+    // Include music
+    String musicPath = sketchiePath+"music/"+selectedMusic;
+    if (!file.exists(musicPath)) {
+      musicPath = "";
+    }
+    createMovie(outputFolder+nf(outIndex, 4, 0)+ext, musicPath, engine.APPPATH+"frames/", wi, hi, (double)renderFramerate, renderFormat);
+  }
   
   
   
   
+  
+  //////////////////////////////////////
+  // FINALIZATION
   
   public void finalize() {
     //free();
