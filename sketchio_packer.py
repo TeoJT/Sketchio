@@ -202,16 +202,6 @@ if (os.path.isdir("sketchio_windows_"+version)):
                 os.rename(new_name_windows+"/lib/gstreamer-1.0", new_name_windows+"/lib/windows64/gstreamer-1.0")
                 print("Moved gstreamer folder to windows64 folder.")
 
-            # If the lib folder does not have dsj.dll, copy it from the code folder to the lib folder
-            if (not os.path.isfile(new_name_windows+"/lib/dsj.dll")):
-                if (os.path.isfile("code/dsj.dll")):
-                    # copy the dsj.dll file to the lib folder
-                    shutil.copy("code/dsj.dll", new_name_windows+"/lib/dsj.dll")
-                    print("Copied dsj.dll to lib folder.")
-                else:
-                    print(color.RED+"Error: code/dsj.dll doesn't exist!"+color.NONE)
-                    print(color.GREY+"dsj is part of the library for camera functionality. Exporting doesn't include it by default. Please ensure it's in a folder called \"code\" in the sketchio dir."+color.NONE)
-                    success = False
 
             if (success):
                 print(color.GREEN+"Lib reorganised."+color.NONE)
@@ -289,18 +279,6 @@ if (os.path.isdir("sketchio_windows_"+version)):
             copy_file(usr_folder_path+"/Documents/Processing/libraries/video/library/gst1-java-core-1.2.0.jar", new_name_windows+"/lib")
             copy_file(usr_folder_path+"/Documents/Processing/libraries/video/library/jna.jar", new_name_windows+"/lib")
             copy_file(usr_folder_path+"/Documents/Processing/libraries/video/library/video.jar", new_name_windows+"/lib")
-
-
-            # If the lib folder does not have dsj.dll, copy it from the code folder to the lib folder
-            if (not os.path.isfile(new_name_windows+"/lib/dsj.dll")):
-                if (os.path.isfile("code/dsj.dll")):
-                    # copy the dsj.dll file to the lib folder
-                    shutil.copy("code/dsj.dll", new_name_windows+"/lib/dsj.dll")
-                    print("Copied dsj.dll to lib folder.")
-                else:
-                    print(color.RED+"Error: code/dsj.dll doesn't exist!"+color.NONE)
-                    print(color.GREY+"dsj is part of the library for camera functionality. Exporting doesn't include it by default. Please ensure it's in a folder called \"code\" in the sketchio dir."+color.NONE)
-                    success = False
 
             if (success):
                 print(color.GREEN+"Lib reorganised."+color.NONE)

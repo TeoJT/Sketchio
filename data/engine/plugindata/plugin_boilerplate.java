@@ -123,6 +123,20 @@ public class CustomPlugin {
     spriteBop(name, 0.2f);
   }
   
+  public String getPath() {
+    return getString(14);
+  }
+  
+  public String getPathDirectorified() {
+    return getString(15);
+  }
+  
+  public PImage getImg(String name) {
+    apiOpCode = 16;
+    args[0] = name;
+    apiCall.run();
+    return (PImage)ret;
+  }
 
 // We need a start() and run() method here which is
 // automatically inserted by the generator.

@@ -2,8 +2,16 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.filechooser.FileSystemView;
 
-
-
+// Size estimations for rendering:
+//400% 16mb
+//300% 9mb
+//200% 4mb
+//100% 1mb
+//50% 0.25mb
+//25% 0.0625mb
+//
+// Formula = width * height * 4 * scale * timeLength * framespersecond 
+//
 
 public class Sketchpad extends Screen {
   private String sketchiePath = "";
@@ -89,20 +97,20 @@ public class Sketchpad extends Screen {
     gui = new SpriteSystemPlaceholder(engine, engine.APPPATH+engine.PATH_SPRITES_ATTRIB+"gui/sketchpad/");
     gui.interactable = false;
     
+    
+    plugin = plugins.createPlugin();
+    
     createCanvas(1024, 1024, 1);
     resetView();
     
     canvasY = myUpperBarWeight;
     
-    plugin = plugins.createPlugin();
-    plugin.sketchioGraphics = canvas;
-    
     input.keyboardMessage = "";
+    code = "";
     // Load default code into keyboardMessage
     for (String s : defaultCode) {
-      input.keyboardMessage += s+"\n";
+      code += s+"\n";
     }
-    input.cursorX = input.keyboardMessage.length();
     
     ffmpeg = new FFmpegEngine();
     
@@ -125,6 +133,7 @@ public class Sketchpad extends Screen {
   // SETUP AND LOADING
   
   private void createCanvas(int wi, int hi, int smooth) {
+    //console.log("CANVAS "+wi+" "+hi);
     canvas = createGraphics(wi, hi, P2D);
     if (smooth == 0) {
       // Nearest neighbour (hey remember this ancient line of code?)
@@ -133,6 +142,7 @@ public class Sketchpad extends Screen {
     else {
       canvas.smooth(smooth);
     }
+    plugin.sketchioGraphics = canvas;
   }
   
   private void loadSketchieInSeperateThread(String path) {
@@ -204,6 +214,8 @@ public class Sketchpad extends Screen {
         ccode += s+"\n";
       }
     }
+    println(" ---------------------- CODE: ----------------------");
+    println(ccode);
     return ccode;
   }
   
@@ -292,8 +304,7 @@ public class Sketchpad extends Screen {
     //////////////////
     // SCRIPT
     // And now: script
-    input.keyboardMessage = loadScript();
-    input.cursorX = input.keyboardMessage.length();
+    code = loadScript();
     
     //////////////////
     // MUSIC
@@ -320,9 +331,9 @@ public class Sketchpad extends Screen {
   }
   
   private void compileCode(String code) {
+    compiling.set(true);
     Thread t1 = new Thread(new Runnable() {
       public void run() {
-        compiling.set(true);
         successful.set(plugin.compile(code));
         compiling.set(false);
         once.set(true);
@@ -369,6 +380,20 @@ public class Sketchpad extends Screen {
     else return display.getDelta();
   }
   
+  public String getPath() {
+    // Undirectorify path
+    if (sketchiePath.charAt(sketchiePath.length()-1) == '/') {
+      return sketchiePath.substring(0, sketchiePath.length()-1);
+    }
+    return sketchiePath;
+  }
+  
+  public String getPathDirectorified() {
+    return sketchiePath;
+  }
+  
+  ////////////////////////////
+  
   private boolean menuShown() {
     return configMenu || renderMenu || rendering;
   }
@@ -414,8 +439,28 @@ public class Sketchpad extends Screen {
     return ((app.textAscent()+app.textDescent()+lineSpacing)*float(countNewlines(txt)+1));
   }
   
+  private void togglePlay() {
+    if (playing) {
+      pause();
+    }
+    else {
+      play();
+    }
+  }
   
+  private void pause() {
+    if (playing) {
+      playing = false;
+      sound.pauseMusic();
+    }
+  }
   
+  private void play() {
+    if (!playing) {
+      playing = true;
+      sound.continueMusic();
+    }
+  }
   
   
   
@@ -441,7 +486,7 @@ public class Sketchpad extends Screen {
     
     boolean menuShown = configMenu || renderMenu;
     if ((lastSelectedPane == CANVAS_PANE || !codeEditorShown) && input.keyActionOnce("playPause") && !menuShown) {
-       playing = !playing;
+       togglePlay();
        input.backspace();   // Don't want the unintended space.
     }
     
@@ -535,7 +580,9 @@ public class Sketchpad extends Screen {
     // All of this is y'know... the actual code editor.
     else {
       // make sure code string is sync'd with keyboardmessage
-      if (!menuShown()) code = input.keyboardMessage;
+      
+      // BIG TODO: This is not the safest solution. Please fix.
+      if (!menuShown() && !loading.get() && input.keyboardMessage.length() > 0) code = input.keyboardMessage;
       
       // This should really be in the displayCanvas code but it's more convenient to have it here for now.
       // Damn I'm really giving myself coding debt for adding shortcuts.
@@ -622,6 +669,7 @@ public class Sketchpad extends Screen {
   TextField heightField = new TextField("config-height", "Height: ");
   TextField timeLengthField = new TextField("config-timelength", "Video length: ");
   TextField framerateField = new TextField("render-framerate", "Framerate: ");
+  private boolean smoothChangesMade = false;
   public void displayMenu() {
     if (menuShown()) {
       // Bug fix to prevent sprite being selected as we click the menu.
@@ -694,19 +742,19 @@ public class Sketchpad extends Screen {
         Runnable[] actions = new Runnable[5];
         
         labels[0] = "None (pixelated)";
-        actions[0] = new Runnable() {public void run() { canvasSmooth = 0; }};
+        actions[0] = new Runnable() {public void run() { canvasSmooth = 0; smoothChangesMade = true; }};
         
         labels[1] = "1x anti-aliasing";
-        actions[1] = new Runnable() {public void run() { canvasSmooth = 1; }};
+        actions[1] = new Runnable() {public void run() { canvasSmooth = 1; smoothChangesMade = true; }};
         
         labels[2] = "2x anti-aliasing";
-        actions[2] = new Runnable() {public void run() { canvasSmooth = 2; }};
+        actions[2] = new Runnable() {public void run() { canvasSmooth = 2; smoothChangesMade = true; }};
         
         labels[3] = "4x anti-aliasing";
-        actions[3] = new Runnable() {public void run() { canvasSmooth = 4; }};
+        actions[3] = new Runnable() {public void run() { canvasSmooth = 4; smoothChangesMade = true; }};
         
         labels[4] = "8x anti-aliasing";
-        actions[4] = new Runnable() {public void run() { canvasSmooth = 8; }};
+        actions[4] = new Runnable() {public void run() { canvasSmooth = 8; smoothChangesMade = true; }};
         
         
         ui.createOptionsMenu(labels, actions);
@@ -756,7 +804,13 @@ public class Sketchpad extends Screen {
           int hi = Integer.parseInt(heightField.value);
           timeLength = Float.parseFloat(timeLengthField.value)*60.;
           
-          createCanvas(wi, hi, canvasSmooth);
+          // Only recreate if changes have been made.
+          if (wi != (int)canvas.width ||
+              hi != (int)canvas.height ||
+              smoothChangesMade
+          ) {
+            createCanvas(wi, hi, canvasSmooth);
+          }
         }
         catch (NumberFormatException e) {
           console.log("Invalid inputs!");
@@ -963,7 +1017,7 @@ public class Sketchpad extends Screen {
     time = 0.0;
     renderFrameCount = 0;
     power.allowMinimizedMode = false;
-    playing = true;
+    play();
     
     // Give a little bit of time so the UI can disappear for better user feedback.
     timeBeforeStartingRender = 5;
@@ -997,11 +1051,11 @@ public class Sketchpad extends Screen {
     if (!compiling.get() && once.compareAndSet(true, false)) {
       if (!successful.get()) {
         console.log(plugin.errorOutput);
-        playing = false;
+        pause();
       }
       else {
         console.log("Successful compilation!");
-        playing = true;
+        play();
         time = 0.;
       }
     }
@@ -1014,7 +1068,7 @@ public class Sketchpad extends Screen {
     sprites.setDelta(getDelta());
     
     // Switch canvas, then begin running the plugin code
-    if (successful.get() && !compiling.get()) {
+    if (successful.get() && !compiling.get() && !loading.get()) {
       canvas.beginDraw();
       canvas.fill(255, 255);
       display.setPGraphics(canvas);
@@ -1077,14 +1131,14 @@ public class Sketchpad extends Screen {
       // When we reach the end of the animation
       if (time > timeLength) {
         if (rendering) {
-          playing = false;
+          pause();
           beginConversion();
           
           // TODO: open output file
         }
         else {
           // Restart if looping, stop playing if not
-          if (!loop) playing = false;
+          if (!loop) pause();
           else time = 0.;
         }
       }
@@ -1117,6 +1171,9 @@ public class Sketchpad extends Screen {
             setMusic(selectedMusic);
           }
           
+          
+          input.keyboardMessage = code;
+          input.cursorX = code.length();
           compileCode(code);
         }
       }
@@ -1135,12 +1192,12 @@ public class Sketchpad extends Screen {
       // we "stop" the music by simply muting the audio, in the background it's still playing tho,
       // but it makes coding a lot more simple.
       if (playing && !rendering) {
-        sound.setMusicVolume(musicVolume);
+        //sound.setMusicVolume(musicVolume);
+        sound.syncMusic(time/60.);
       }
       else {
-        sound.setMusicVolume(0.);
+        //sound.setMusicVolume(0.);
       }
-      sound.syncMusic(time/60.);
       
     }
     else {
@@ -1167,7 +1224,7 @@ public class Sketchpad extends Screen {
         textSprite("renderinginfoscreen-txt1", "Rendering sketch...\nStage 1/2");
         if (ui.button("renderinginfoscreen-cancel", "cross_128", "Stop rendering")) {
           sound.playSound("select_smaller");
-          playing = false;
+          pause();
           rendering = false;
           power.allowMinimizedMode = true;
           console.log("Rendering cancelled.");
@@ -1228,7 +1285,7 @@ public class Sketchpad extends Screen {
       
       if (ui.button("folder_button", "folder_128", "Show files")) {
         sound.playSound("select_any");
-        playing = false;
+        pause();
         file.open(sketchiePath);
       }
       
@@ -1300,7 +1357,7 @@ public class Sketchpad extends Screen {
         // If in play button area
         if (input.primaryClick && selectedPaneTimeline()) {
           // Toggle play/pause button
-          playing = !playing;
+          togglePlay();
           // Restart if at end
           if (playing && time > timeLength) time = 0.;
         }
@@ -1412,14 +1469,15 @@ public class Sketchpad extends Screen {
           console.warn("createMovie: Failed to create movie, sorry");
         }
         else {
-          rendering = false;
-          converting = false;
-          power.allowMinimizedMode = true;
           console.log("Done render!");
           
           // Show the file in file explorer
           file.open(engine.APPPATH+"output/");
         }
+        
+        rendering = false;
+        converting = false;
+        power.allowMinimizedMode = true;
       }
     }.execute();
   

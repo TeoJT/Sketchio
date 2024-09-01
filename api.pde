@@ -111,6 +111,30 @@ public Object runTWIT(int opcode, Object[] args) {
         getSprite((String)args[0]).bop(int((float)args[1]));
         break;
         
+        // getPath()
+        case 14:
+        if (timewayEngine.currScreen instanceof Sketchpad) {
+          Sketchpad sk = (Sketchpad)timewayEngine.currScreen;
+          return sk.getPath();
+        }
+        return "";
+        
+        // getPathDirectorified()
+        case 15:
+        if (timewayEngine.currScreen instanceof Sketchpad) {
+          Sketchpad sk = (Sketchpad)timewayEngine.currScreen;
+          return sk.getPathDirectorified();
+        }
+        return "";
+        
+        // getImg(String name);
+        case 16: {
+          DImage dimg = timewayEngine.display.getImg((String)args[0]);
+          if (dimg == null || dimg.pimage == null) return timewayEngine.display.errorImg;
+          else return dimg.pimage;
+        }
+        
+        
         
         default:
         timewayEngine.console.warn("Unknown opcode "+opcode);

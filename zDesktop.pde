@@ -261,6 +261,9 @@ public class AndroidMedia {
   public void loop() {
   }
   
+  public void pause() {
+  }
+  
   public void stop() {
   }
   

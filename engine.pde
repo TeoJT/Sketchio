@@ -484,7 +484,7 @@ public class TWEngine {
     private boolean forcePowerModeEnabled = false;
     private PowerMode forcedPowerMode = PowerMode.HIGH;
     private PowerMode powerModeBefore = PowerMode.NORMAL;
-    public boolean allowMinimizedMode = true;
+    public boolean allowMinimizedMode = false;
   
     // The score that seperates the stable fps from the unstable fps.
     // If you've got half a brain, it would make the most sense to keep it at 0.
@@ -2471,6 +2471,12 @@ public class TWEngine {
         else if (mode == ANDROID) androidMusic.loop();     // Here we loop cus this ain't the half-working Movie library, we can freely do that
       }
       
+      public void pause() {
+        if (mode == CACHED) cachedMusic.pause(); 
+        else if (mode == STREAM && !DISABLE_GSTREAMER) streamMusic.pause();
+        else if (mode == ANDROID) androidMusic.pause();
+      }
+      
       public void stop() {
         if (mode == CACHED) cachedMusic.stop(); 
         else if (mode == STREAM && !DISABLE_GSTREAMER) streamMusic.stop();
@@ -2512,6 +2518,7 @@ public class TWEngine {
         float currentTime = this.time();
         float tolerance = 0.05;
         if ((currentTime > expectedTime+tolerance) || (currentTime < expectedTime-tolerance)) {
+          
           this.jump(expectedTime);
         }
       }
@@ -3157,6 +3164,18 @@ public class TWEngine {
       if (streamerMusicFadeTo != null) {
         streamerMusicFadeTo.stop();
         streamerMusicFadeTo = null;
+      }
+    }
+    
+    public void pauseMusic() {
+      if (streamerMusic != null) {
+        streamerMusic.pause();
+      }
+    }
+    
+    public void continueMusic() {
+      if (streamerMusic != null) {
+        streamerMusic.play();
       }
     }
   
@@ -4476,7 +4495,7 @@ public class TWEngine {
             pluginRunPoint.invoke(pluginIntance);
           }
           catch (Exception e) {
-            System.err.println("Run plugin exception: "+ e.getClass().getSimpleName());
+            console.warnOnce("Run plugin exception: "+ e.getClass().getSimpleName() + " " + e.getMessage());
           }
         }
       }
@@ -4540,6 +4559,7 @@ public class TWEngine {
       // And you read this method right, you just provide the code into
       // this method and boom, it'll compile just like that.
       public boolean compile(String code) {
+        
         // You might be thinking it's ineffective to just keep
         // counting up the cacheEntries, but they're held on by
         // java (meaning we can't delete them) until the program
@@ -4572,6 +4592,9 @@ public class TWEngine {
         
         if (!compiled) {
           this.errorOutput = cmd.message;
+          if (this.errorOutput.length() == 0) {
+            this.errorOutput = "Status code error "+cmd.exitCode;
+          }
           return false;
         }
         this.errorOutput = "";
@@ -4635,7 +4658,7 @@ public class TWEngine {
     // If I'm lucky enough, I think this thing should work in linux too even though
     // the cmd system is completely different, because we're essentially just calling
     // some java executables.
-    public CmdOutput runOSCommand(String cmd) {
+    public CmdOutput runOSCommand(String... cmd) {
       try {
         // Run the OS command
         Process process = Runtime.getRuntime().exec(cmd);
@@ -4683,7 +4706,14 @@ public class TWEngine {
     // Use javac (java compiler) to turn our file into a .class file.
     // I have no idea what a .class file is lol.
     CmdOutput toClassFile(String inputFile) {
-      final String javacPath = javapath+"/bin/javac.exe";
+      String javacPath;
+      
+      if (isWindows()) {
+        javacPath = javapath+"/bin/javac.exe";
+      }
+      else {
+        javacPath = javapath+"/bin/javac";
+      }
       
       // Find the processing core so we can use PApplet in our plugin.
       // For the dev version (processing ide)
@@ -4701,17 +4731,32 @@ public class TWEngine {
         return new CmdOutput(1, "Could not find Processing core.");
       }
       
+      
       // Stored in the cache folder.
       final String pluginPath = CACHE_PATH;
       
       // run as if we've opened up cmd/terminal and are running our command.
-      CmdOutput cmd = runOSCommand("\""+javacPath+"\" -cp \""+processingCorePath+";"+pluginPath+"\" \""+inputFile+"\"");
+      CmdOutput cmd = null;
+      if (isWindows()) {
+        cmd = runOSCommand(javacPath, "-cp", processingCorePath+";"+pluginPath, inputFile);
+      }
+      else {
+        //cmd = runOSCommand("\""+javacPath+"\" -cp \""+processingCorePath+";"+pluginPath+"\" \""+inputFile+"\"");
+        cmd = runOSCommand(javacPath, "-cp", processingCorePath, inputFile);
+      }
       return cmd;
     }
     
     String toJarFile(String classFile) {
       // Good ol jar thingie.
-      final String jarExePath = javapath+"/bin/jar.exe";
+      String jarExePath;
+      
+      if (isWindows()) {
+        jarExePath = javapath+"/bin/jar.exe";
+      }
+      else {
+        jarExePath = javapath+"/bin/jar";
+      }
       
       // In our cachepath.
       final String out = CACHE_PATH+"plugin-"+cacheEntry+".jar";
@@ -4722,7 +4767,7 @@ public class TWEngine {
       final String className = (new File(classFile)).getName();
       
       // And boom. It is then done.
-      runOSCommand("\""+jarExePath+"\" cvf \""+out+"\" -C \""+classPath+"\" "+className);
+      runOSCommand(jarExePath, "cvf", out, "-C", classPath, className);
       
       return out;
     }
