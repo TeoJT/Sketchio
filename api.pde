@@ -134,6 +134,51 @@ public Object runTWIT(int opcode, Object[] args) {
           else return dimg.pimage;
         }
         
+        // largeImg(String name, float x, float y, float w, float h)
+        case 17: {
+          DImage dimg = timewayEngine.display.getImg((String)args[0]);
+          
+          // Bit of error checking
+          Sketchpad sk = null;
+          if (dimg == null || dimg.pimage == null) return timewayEngine.display.errorImg;
+          if (timewayEngine.currScreen instanceof Sketchpad) {
+            sk = (Sketchpad)timewayEngine.currScreen;
+          }
+          else break;
+          
+          timewayEngine.display.largeImg(sk.canvas, dimg.largeImage, (float)args[1], (float)args[2], (float)args[3], (float)args[4]);
+          break;
+        }
+        
+        // beat()
+        case 18: {
+          return timewayEngine.sound.beat;
+        }
+        
+        // step()
+        case 19: {
+          return timewayEngine.sound.step;
+        }
+        
+        // beatSaw(int beatoffset, int stepoffset, int everyxbeat)
+        case 20: {
+          return timewayEngine.sound.beatSaw((int)args[0], (int)args[1], (int)args[2]);
+        }
+        
+        // stepSaw()
+        case 21: {
+          return timewayEngine.sound.beatSaw();
+        }
+        
+        case 22: {
+          return timewayEngine.sound.beatToTime((int)args[0]);
+        }
+        
+        case 23: {
+          return timewayEngine.sound.beatToTime((int)args[0], (int)args[1]);
+        }
+        
+        
         
         
         default:

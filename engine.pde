@@ -483,7 +483,7 @@ public class TWEngine {
     private boolean forcePowerModeEnabled = false;
     private PowerMode forcedPowerMode = PowerMode.HIGH;
     private PowerMode powerModeBefore = PowerMode.NORMAL;
-    public boolean allowMinimizedMode = true;
+    public boolean allowMinimizedMode = false;
   
     // The score that seperates the stable fps from the unstable fps.
     // If you've got half a brain, it would make the most sense to keep it at 0.
@@ -2358,8 +2358,6 @@ public class TWEngine {
     public final String MUSIC_CACHE_FILE = "music_cache.json";
     public final int MAX_MUSIC_CACHE_SIZE_KB = 1024*256;  // 256 MB
     public final String[] FORCE_CACHE_MUSIC = {
-      "engine/music/pixelrealm_default_bgm.wav",
-      "engine/music/pixelrealm_default_bgm_legacy.wav"
     };
     // For when porting to other platforms which don't support gstreamer (*ahem* android *ahem*) 
     public boolean DISABLE_GSTREAMER = false;
@@ -3291,8 +3289,96 @@ public class TWEngine {
       return 0.0;
     }
     
+    
+    public int beat = 0;
+    public int step = 0;
+    
+    public float bpm = 1f;
+    
+    public float getTime() {
+      if (streamerMusic != null) {
+        // TODO: getting time is slow for some reason.
+        return streamerMusic.time();
+      }
+      return 0f;
+    }
+    
+    
+    
+    public float beatToTime(int beat) {
+      float beatspersecond = 60f/bpm;
+      return beatspersecond*((float)beat);
+    }
+    
+    public float beatToTime(int beat, int step) {
+      float beatspersecond = 60f/bpm;
+      float stepsspersecond = beatspersecond/4f;
+      return beatspersecond*((float)beat)+stepsspersecond*((float)step);
+    }
+    
+    public boolean beatBetween(int start, int end) {
+      return false;
+    }
+    
+    
+    public float beatSaw(int beatoffset, int stepoffset, int everyxbeat) {
+      if (everyxbeat == 0) everyxbeat = 1;
+      float t = (getTime()/60f)+beatToTime(beatoffset, stepoffset);
+    
+      float beatspersecond = 60f/bpm;
+      float beatfloat = (t/beatspersecond);
+      int beat = (int)beatfloat;
+    
+      if (beat % everyxbeat == 0) return 1f-(beatfloat-(float)beat);
+      else return 0f;
+    }
+    
+    public float beatSaw(int beatoffset, int everyxbeat) {
+      return beatSaw(beatoffset, 0, everyxbeat);
+    }
+    
+    public float beatSaw(int beatoffset) {
+      return beatSaw(beatoffset, 0, 1);
+    }
+    
+    public float beatSawOffbeat(int beatoffset, int everyxbeat) {
+      return beatSaw(beatoffset, 2, everyxbeat);
+    }
+    
+    public float beatSaw() {
+      return beatSaw(0, 0, 1);
+    }
+    
+    public float stepSaw(int offset) {
+      float t = (getTime()/60f)+beatToTime(0, offset);
+    
+      float beatspersecond = 60f/bpm;
+      float stepfloat = (t/(beatspersecond/4f));
+    
+      return 1f-(stepfloat-(float)((int)stepfloat));
+    }
+    
+    
+    private void processBeat() {
+      float t = 0f;
+      if (streamerMusic != null) {
+        // TODO: getting time is slow for some reason.
+        t = streamerMusic.time();
+      }
+      if (bpm == 0f) return;
+      
+      float beatspersecond = 60f/bpm;
+
+      float beatfloat = (t/beatspersecond);
+      float stepfloat = (t/(beatspersecond/4f));
+    
+      beat = (int)beatfloat;
+      step = ((int)stepfloat)%4;
+    }
   
     public void processSound() {
+      processBeat();
+      
       // Once gstreamer has loaded up, begin playing the music we actually want to play.
       if (reloadMusic && !loadingMusic()) {
         if (CACHE_MUSIC && !isAndroid()) {
