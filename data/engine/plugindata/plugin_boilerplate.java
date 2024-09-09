@@ -138,6 +138,63 @@ public class CustomPlugin {
     return (PImage)ret;
   }
 
+  public void largeImg(String name, float x, float y, float w, float h) {
+    call(17, name, x, y, w, h);
+  }
+
+  public int beat() {
+    return getInt(18);
+  }
+
+  public int step() {
+    return getInt(19);
+  }
+
+  ///////////////////
+  // 20
+  public float beatSaw(int beatoffset, int stepoffset, int everyxbeat) {
+    return getFloat(20, beatoffset, stepoffset, everyxbeat);
+  }
+  
+  public float beatSaw(int beatoffset, int everyxbeat) {
+    return beatSaw(beatoffset, 0, everyxbeat);
+  }
+  
+  public float beatSaw(int beatoffset) {
+    return beatSaw(beatoffset, 0, 1);
+  }
+  
+  public float beatSawOffbeat(int beatoffset, int everyxbeat) {
+    return beatSaw(beatoffset, 2, everyxbeat);
+  }
+  
+  public float beatSaw() {
+    return beatSaw(0, 0, 1);
+  }
+
+  ///////////////////
+  // 21
+  public float stepSaw() {
+    return getFloat(21);
+  }
+
+  public float beatToTime(int beat) {
+    return getFloat(22, beat);
+  }
+
+  public float beatToTime(int beat, int step) {
+    return getFloat(23, beat);
+  }
+
+
+
+  
+
+  public boolean beatBetween(int start, int end) {
+    return false;
+  }
+
+
 // We need a start() and run() method here which is
 // automatically inserted by the generator.
 

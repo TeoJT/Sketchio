@@ -43,8 +43,8 @@ public class Sketchpad extends Screen {
   private boolean rendering = false;
   private boolean converting = false;
   private int timeBeforeStartingRender = 0;
-  private PGraphics shaderCanvas;
-  private PGraphics scaleCanvas;
+  private SwapchainCanvas[] swapchain;                 // In order to save concurrently, we use multiple scale canvases
+  private int swapchainIndex = 0;
   private int renderFrameCount = 0;
   private float renderFramerate = 0.;
   private float musicVolume = 0.5;
@@ -70,6 +70,16 @@ public class Sketchpad extends Screen {
   final static int CANVAS_PANE = 1;
   final static int CODE_PANE = 2;
   final static int TIMELINE_PANE = 3;
+  
+  final static int SWAPCHAIN_SIZE = 20;
+  
+  class SwapchainCanvas {
+    public AtomicBoolean ready = new AtomicBoolean(true);
+    public Thread savingThread;
+    public PGraphics shaderCanvas = null;
+    public PGraphics scaleCanvas = null;
+    public PImage saveImage = null;
+  }
   
   
   private String[] defaultCode = {
@@ -178,7 +188,6 @@ public class Sketchpad extends Screen {
     json.setInt("smooth", canvasSmooth);
     json.setFloat("time_length", timeLength);
     json.setString("music_file", selectedMusic);
-    json.setBoolean("show_code_editor", codeEditorShown);
     
     app.saveJSONObject(json, sketchiePath+"sketch_config.json");
   }
@@ -328,7 +337,6 @@ public class Sketchpad extends Screen {
       // and timelength cus why not.
       timeLength = configJSON.getFloat("time_length", 10.0);
       selectedMusic = configJSON.getString("music_file", "");
-      codeEditorShown = configJSON.getBoolean("show_code_editor", true);
     }
   }
   
@@ -419,7 +427,7 @@ public class Sketchpad extends Screen {
   
   private boolean codeEditorShown = true;
   private float middle() {
-    if (codeEditorShown)
+    if (codeEditorShown())
       return WIDTH/2;
     else
       return WIDTH;
@@ -1010,14 +1018,9 @@ public class Sketchpad extends Screen {
       f.mkdir();
     }
     
-    // Create our canvases (absolutely no scaling allowed)
-    shaderCanvas = createGraphics(canvas.width, canvas.height, P2D);
-    ((PGraphicsOpenGL)shaderCanvas).textureSampling(2);   // Disable texture smoothing
-    
-    if (upscalePixels != 1.) {
-      scaleCanvas = createGraphics(int(canvas.width*upscalePixels), int(canvas.height*upscalePixels), P2D);
-      ((PGraphicsOpenGL)scaleCanvas).textureSampling(2);   // Disable texture smoothing
-    }
+    //if (upscalePixels != 1.) {
+    //}
+    swapchain = new SwapchainCanvas[SWAPCHAIN_SIZE];
     
     // set our variables
     time = 0.0;
@@ -1041,7 +1044,8 @@ public class Sketchpad extends Screen {
   
   
   
-  
+  // With swapchain: 1:08:60
+  // Without swapchain: 
   
   
   
@@ -1109,25 +1113,115 @@ public class Sketchpad extends Screen {
       // Do shader stuff (TODO later)
       // And another TODO: optimise, if we don't have any shaders,
       // save directly from canvas instead (big performance saves!)
-      shaderCanvas.beginDraw();
-      shaderCanvas.clear();
-      shaderCanvas.image(canvas, 0, 0, shaderCanvas.width, shaderCanvas.height);
-      shaderCanvas.endDraw();
+      
+      // We initiate swapchain canvases as we render because due to that god ass annoying bug in processing
+      // which causes an unavoidable stalls when we create large images, we don't want to freeze the application
+      // for a long time and instead have more, but shorter freezes.
+      if (swapchain[swapchainIndex] == null) {
+        swapchain[swapchainIndex] = new SwapchainCanvas();
+        
+        // init shader canvas 
+        swapchain[swapchainIndex].shaderCanvas = createGraphics(canvas.width, canvas.height, P2D);
+        ((PGraphicsOpenGL)swapchain[swapchainIndex].shaderCanvas).textureSampling(2);   // Disable texture smoothing
+        swapchain[swapchainIndex].shaderCanvas.hint(DISABLE_ASYNC_SAVEFRAME);
+        
+        // init scale canvas
+        swapchain[swapchainIndex].scaleCanvas = createGraphics(int(canvas.width*upscalePixels), int(canvas.height*upscalePixels));
+        //((PGraphicsOpenGL)swapchain[swapchainIndex].scaleCanvas).textureSampling(2);   // Disable texture smoothing
+        swapchain[swapchainIndex].scaleCanvas.hint(DISABLE_ASYNC_SAVEFRAME);
+      }
+      
+      // Before we go rendering anything, we need to make sure our thread is free and not writing anything
+      // If busy, unfortunately we'll have no choice but to wait until the thread is free.
+      int timewaited = 0;
+      // Note: once thread is ready, we claim the thread by setting false automatically.
+      while (!swapchain[swapchainIndex].ready.compareAndSet(true, false)) {
+        
+        // Try to search for a free thread to use instead
+        boolean success = false;
+        for (int i = 0; i < SWAPCHAIN_SIZE; i++) {
+          if (swapchain[i] != null && swapchain[swapchainIndex].ready.compareAndSet(true, false)) {
+            // Use this index instead.
+            swapchainIndex = i;
+          }
+        }
+        if (success) break;
+        
+        // Otherwise wait 10ms.
+        
+        try {
+          Thread.sleep(2);
+          timewaited += 2;
+        }
+        catch (InterruptedException e) {
+          
+        }
+        
+        if (timewaited > 5000) {
+          break;
+        }
+      }
+      // Just debug (and error catching) info.
+      if (timewaited > 5000) {
+        console.warn("Something happened. Thread stall over 5 secs, could not render animation.");
+        rendering = false;
+        return;
+      }
+      else if (timewaited > 0) {
+        console.log("Busy thread, had to stall for "+timewaited+"ms.");
+      }
+      
+      // Begin drawing to the shader canvas.
+      // Of course, TODO: we don't have shaders yet.
+      swapchain[swapchainIndex].shaderCanvas.beginDraw();
+      swapchain[swapchainIndex].shaderCanvas.clear();
+      swapchain[swapchainIndex].shaderCanvas.image(canvas, 0, 0, swapchain[swapchainIndex].shaderCanvas.width, swapchain[swapchainIndex].shaderCanvas.height);
+      swapchain[swapchainIndex].shaderCanvas.endDraw();
       
       // Do scaling (yay)
       // But if we don't have scaling enabled skip this step, will save performance and time.
       if (upscalePixels != 1) {
-        scaleCanvas.beginDraw();
-        scaleCanvas.clear();
-        scaleCanvas.image(shaderCanvas, 0, 0, scaleCanvas.width, scaleCanvas.height);
-        scaleCanvas.endDraw();
-        scaleCanvas.save(frame);
+        swapchain[swapchainIndex].scaleCanvas.beginDraw();
+        swapchain[swapchainIndex].scaleCanvas.clear();
+        swapchain[swapchainIndex].scaleCanvas.image(swapchain[swapchainIndex].shaderCanvas, 0, 0, swapchain[swapchainIndex].scaleCanvas.width, swapchain[swapchainIndex].scaleCanvas.height);
+        swapchain[swapchainIndex].scaleCanvas.endDraw();
+        
+        
+        
+        
+        image(swapchain[swapchainIndex].scaleCanvas, 0, 50, 300, 300);
+        
+        final int index = swapchainIndex;
+        final String myframe = frame;
+        swapchain[index].savingThread = new Thread(new Runnable() {
+              public void run() {
+                swapchain[index].scaleCanvas.save(myframe);
+                // Once done release the chain slot
+                swapchain[index].ready.set(true);
+              }
+        });
+        swapchain[index].savingThread.start();
       }
       else {
+        
+        image(swapchain[swapchainIndex].shaderCanvas, 0, 50, 300, 300);
+        
         // If scaling is disabled, then shading canvas already has everything we need.
-        shaderCanvas.save(frame);
+        final int index = swapchainIndex;
+        final String myframe = frame;
+        swapchain[index].savingThread = new Thread(new Runnable() {
+              public void run() {
+                swapchain[index].shaderCanvas.save(myframe);
+                // Once done release the chain slot
+                swapchain[index].ready.set(true);
+              }
+        });
+        swapchain[index].savingThread.start();
       }
       
+      // After all this, move on to the next swapchain slot
+      swapchainIndex++;
+      if (swapchainIndex >= SWAPCHAIN_SIZE) swapchainIndex = 0;
     }
     
     // Update time
@@ -1155,8 +1249,8 @@ public class Sketchpad extends Screen {
     power.setAwake();
     
     // Set engine typing settings.
-    input.addNewlineWhenEnterPressed = codeEditorShown;
-    engine.allowShowCommandPrompt = !codeEditorShown;
+    input.addNewlineWhenEnterPressed = codeEditorShown();
+    engine.allowShowCommandPrompt = !codeEditorShown();
     
     if (!loading.get()) {
       if (processAfterLoadingIndex.get() > 0) {
@@ -1269,7 +1363,6 @@ public class Sketchpad extends Screen {
       if (ui.button("showcode_button", "code_128", codeEditorShown ? "Hide code" : "Show code")) {
         sound.playSound("select_any");
         codeEditorShown = !codeEditorShown;
-        saveConfig();
       }
       
       if (ui.button("settings_button", "doc_128", "Sketch config")) {
@@ -1345,6 +1438,7 @@ public class Sketchpad extends Screen {
     app.fill(255);
     app.rect(timeNotchPos-4, y+(myLowerBarWeight/2)-25, 8, 50); 
     
+    // Display play/pause
     display.imgCentre(playing ? "pause_128" : "play_128", BAR_X_START/2, y+(myLowerBarWeight/2), myLowerBarWeight, myLowerBarWeight);
     
     if ((input.mouseY() > y || selectedPane == TIMELINE_PANE) && !ui.miniMenuShown()) {
@@ -1497,8 +1591,15 @@ public class Sketchpad extends Screen {
     int wi = canvas.width;
     int hi = canvas.height;
     if (upscalePixels != 1.) {
-      wi = scaleCanvas.width;
-      hi = scaleCanvas.height;
+      if (swapchain == null || swapchain[0].scaleCanvas == null) {
+        console.bugWarn("beginConversion: swapchain and scaleCanvas shouldn't be null here!");
+        return;
+      }
+      
+      // Just use first scalecanvas in swapchain
+      // ugly code but ive commented it here so you know what it does now.
+      wi = swapchain[0].scaleCanvas.width;
+      hi = swapchain[0].scaleCanvas.height;
     }
     
     // create output folder if it don't exist.
