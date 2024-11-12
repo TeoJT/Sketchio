@@ -171,11 +171,31 @@ public Object runTWIT(int opcode, Object[] args) {
         }
         
         case 22: {
-          return timewayEngine.sound.beatToTime((int)args[0]);
+          return timewayEngine.sound.beatToTime(((int)args[0])-1);
         }
         
         case 23: {
-          return timewayEngine.sound.beatToTime((int)args[0], (int)args[1]);
+          return timewayEngine.sound.beatToTime(((int)args[0])-1, ((int)args[1])-1);
+        }
+        
+        // shaderUniforms(params...)
+        case 24: {
+          if (timewayEngine.currScreen instanceof Sketchpad) {
+            Sketchpad sk = (Sketchpad)timewayEngine.currScreen;
+            
+            
+            int l = (int)args[0];
+            
+            if (sk.shaderParams == null || sk.shaderParams.length != l) {
+              sk.shaderParams = new Object[l];
+            }
+            
+            for (int i = 0; i < l; i++) {
+              // Copy data cus we don't want problem with args object being the same in API and sketchpad.
+              sk.shaderParams[i] = args[i+1];
+            }
+          }
+          break;
         }
         
         

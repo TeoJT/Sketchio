@@ -34,9 +34,12 @@ public class Sketchpad extends Screen {
   private JSONObject configJSON = null;
   private AtomicBoolean loading = new AtomicBoolean(true);
   private AtomicInteger processAfterLoadingIndex = new AtomicInteger(0);
-  float textAreaZoom = 22.0;
+  private float textAreaZoom = 22.0;
   private boolean configMenu = false;
   private boolean renderMenu = false;
+  private boolean errorMenu  = false;
+  private String errorLog = "";
+  private float errorHeight = 0f;
   private int canvasSmooth = 1;
   private String renderFormat = "MPEG-4";
   private float upscalePixels = 1.;
@@ -49,12 +52,19 @@ public class Sketchpad extends Screen {
   private float renderFramerate = 0.;
   private float musicVolume = 0.5;
   private String[] musicFiles = new String[0];
+  private String[] loadedShaders = new String[0];
   private String selectedMusic = "";
+  private String selectedShader = "";
+  public Object[] shaderParams = null;
+  
+  
+  
   
   private boolean playing = false;
   private boolean loop = false;
-  private float time = 0.;
-  private float timeLength = 10.*60.;
+  private float time = 0f;
+  private float timeLength = 10f*60f;
+  private float bpm = 120f;
   
   // Canvas 
   private float beginDragX = 0.;
@@ -119,6 +129,18 @@ public class Sketchpad extends Screen {
     //sound.streamMusic(engine.APPPATH+"engine/music/test.mp3");
   }
   
+  //{
+  //  if (file.exists(engine.APPPATH+engine.CACHE_PATH)) {
+  //    File[] cacheFolder = (new File(engine.APPPATH+engine.CACHE_PATH)).listFiles();
+  //    for (File f : cacheFolder) {
+  //      console.log(file.getExt(f.getName()));
+  //      if (file.getExt(f.getName()).equals("jar")) {
+  //        f.delete();
+  //      }
+  //    }
+  //  }
+  //}
+  
   
   
   
@@ -142,6 +164,10 @@ public class Sketchpad extends Screen {
     else {
       canvas.smooth(smooth);
     }
+    
+    shaderCanvas = createGraphics(canvas.width, canvas.height, P2D);
+    ((PGraphicsOpenGL)shaderCanvas).textureSampling(2);   // Disable texture smoothing
+    
     plugin.sketchioGraphics = canvas;
   }
   
@@ -166,7 +192,8 @@ public class Sketchpad extends Screen {
     // a keyboard forever.
     String[] strs = new String[1];
     strs[0] = code;
-    app.saveStrings(sketchiePath+"scripts/main.pde", strs);
+    file.backupMove(sketchiePath+"scripts/main.java");
+    app.saveStrings(sketchiePath+"scripts/main.java", strs);
     
     console.log("Saved.");
   }
@@ -179,8 +206,28 @@ public class Sketchpad extends Screen {
     json.setFloat("time_length", timeLength);
     json.setString("music_file", selectedMusic);
     json.setBoolean("show_code_editor", codeEditorShown);
+    json.setFloat("bpm", bpm);
+    json.setBoolean("loop", loop);
+    json.setString("shader", selectedShader);
+    
     
     app.saveJSONObject(json, sketchiePath+"sketch_config.json");
+  }
+  
+  private void loadConfig() {
+    if (file.exists(sketchiePath+"sketch_config.json")) {
+      configJSON = loadJSONObject(sketchiePath+"sketch_config.json");
+      // Need to load the canvas from a seperate thread
+      // But while we're here, now's a good time to set the music file.
+      // and timelength cus why not.
+      timeLength = configJSON.getFloat("time_length", 10.0);
+      selectedMusic = configJSON.getString("music_file", "");
+      codeEditorShown = configJSON.getBoolean("show_code_editor", true);
+      bpm = configJSON.getFloat("bpm", 120f);
+      sound.setBPM(bpm);
+      loop = configJSON.getBoolean("loop", false);
+      selectedShader = configJSON.getString("shader", "");
+    }
   }
   
   // TODO: only loads one script
@@ -195,7 +242,7 @@ public class Sketchpad extends Screen {
       for (File f : scripts) {
         String scriptAbsolutePath = f.getAbsolutePath();
         
-        if (file.getExt(scriptAbsolutePath).equals("pde")) {
+        if (file.getExt(scriptAbsolutePath).equals("java")) {
           String[] lines = app.loadStrings(scriptAbsolutePath);
           ccode = "";
           for (String s : lines) {
@@ -222,6 +269,9 @@ public class Sketchpad extends Screen {
   
   
   private void loadSketchie(String path) {
+    // Just in case the thread is still running
+    terminateFileUpdateThread();
+    
     imagesInSketch.clear();
     loadedImages.clear();
     processAfterLoadingIndex.set(0);
@@ -281,9 +331,41 @@ public class Sketchpad extends Screen {
         // Add to list so we know what to clear from memory once we're done.
         imagesInSketch.add(name);
         loadedImages.add(img);
+        // So that we can check for file updates
+        imgsMap.add(name);
         numberImages++;
       }
       processAfterLoadingIndex.set(numberImages);
+    }
+    
+    
+    ///////////////////
+    // SHADERS
+    String shaderPath = "";
+    if (file.exists(path+"shaders")) shaderPath = path+"shaders";
+    if (file.exists(path+"shader")) shaderPath = path+"shader";
+    
+    // Shader path
+    if (shaderPath.length() > 0) {
+      // List out all the files, get each image.
+      File[] sh = (new File(shaderPath)).listFiles();
+      loadedShaders = new String[sh.length];
+      for (int i = 0; i < sh.length; i++) {
+        File f = sh[i];
+        
+        String fullPath = f.getAbsolutePath().replaceAll("\\\\", "/");
+        String ext = file.getExt(fullPath);
+        String name = file.getIsolatedFilename(fullPath);
+        
+        if (ext.equals("glsl") || ext.equals("vert")) {
+          display.loadShader(fullPath);
+          loadedShaders[i] = name;
+        }
+        else {
+          loadedShaders[i] = name+" (invalid)";
+        }
+        // GLSL shaders are loaded with vert shaders.
+      }
     }
     
     
@@ -321,15 +403,10 @@ public class Sketchpad extends Screen {
     //////////////////
     // CONFIG
     // Load sketch config
-    if (file.exists(path+"sketch_config.json")) {
-      configJSON = loadJSONObject(path+"sketch_config.json");
-      // Need to load the canvas from a seperate thread
-      // But while we're here, now's a good time to set the music file.
-      // and timelength cus why not.
-      timeLength = configJSON.getFloat("time_length", 10.0);
-      selectedMusic = configJSON.getString("music_file", "");
-      codeEditorShown = configJSON.getBoolean("show_code_editor", true);
-    }
+    loadConfig();
+    
+    // Should be safe to check the update checker thread
+    startFileUpdateThread();
   }
   
   private void compileCode(String code) {
@@ -372,7 +449,7 @@ public class Sketchpad extends Screen {
   
   // methods for use by the API
   public float getTime() {
-    return time;
+    return time/60.;
   }
   
   public float getDelta() {
@@ -392,6 +469,10 @@ public class Sketchpad extends Screen {
   
   public String getPathDirectorified() {
     return sketchiePath;
+  }
+  
+  public boolean codeOK() {
+    return (successful.get() && !compiling.get() && !loading.get());
   }
   
   ////////////////////////////
@@ -419,7 +500,7 @@ public class Sketchpad extends Screen {
   
   private boolean codeEditorShown = true;
   private float middle() {
-    if (codeEditorShown)
+    if (codeEditorShown || rendering)
       return WIDTH/2;
     else
       return WIDTH;
@@ -518,7 +599,7 @@ public class Sketchpad extends Screen {
     
     
     if (canvasPane && sprites.selectedSprite == null && input.mouseY() < HEIGHT-myLowerBarWeight && input.mouseY() > myUpperBarWeight) {
-      if (input.primaryClick && !isDragging && selectedPane == 0) {
+      if (input.primaryOnce && !isDragging && selectedPane == 0) {
         beginDragX = input.mouseX();
         beginDragY = input.mouseY();
         prevCanvasX = canvasX;
@@ -537,12 +618,22 @@ public class Sketchpad extends Screen {
       }
     }
     
+    // Sprite selected, then we right-click it
+    // Brings up the menu
+    if (sprites.selectedSprite != null && sprites.selectedSprite.mouseWithinSprite() && input.secondaryOnce && !ui.miniMenuShown()) {
+      showSpriteMenu();
+    }
+    
     sprites.setMouseScale(canvasScale, canvasScale);
     float xx = canvasX-canvas.width*canvasScale*0.5;
     float yy = canvasY-canvas.height*canvasScale*0.5;
     sprites.setMouseOffset(xx, yy);
     
-    app.image(canvas, xx, yy, canvas.width*canvasScale, canvas.height*canvasScale);
+    // Shader canvas cus that's where our final frame is drawn even if we don't have any post-processing shaders active.
+    
+    if (codeOK()) {
+      app.image(shaderCanvas, xx, yy, canvas.width*canvasScale, canvas.height*canvasScale);
+    }
   }
   
   private void displayCodeEditor() {
@@ -556,7 +647,7 @@ public class Sketchpad extends Screen {
         input.scrollOffset = codePaneScroll;
       }
       
-      if (input.primaryClick) {
+      if (input.primaryOnce) {
         lastSelectedPane = CODE_PANE;
       }
       
@@ -650,6 +741,33 @@ public class Sketchpad extends Screen {
   }
   
   
+  public void showError() {
+    if (errorHeight < 40f) return;
+    
+    app.fill(255, 200, 200);
+    app.noStroke();
+    app.rect(0, myUpperBarWeight, middle(), errorHeight);
+    app.fill(0);
+    app.textFont(display.getFont("Source Code"), 20);
+    app.text(errorLog, 5, myUpperBarWeight+5, middle()-10, errorHeight-10);
+    
+    
+    ui.useSpriteSystem(gui);
+    boolean close = false;
+    
+    if (codeEditorShown()) {
+      close = ui.button("close-error-1", "cross", "");
+    }
+    else {
+      close = ui.button("close-error-2", "cross", "");
+    }
+    
+    if (close) {
+      errorMenu = false;
+    }
+  }
+  
+  
   
   
   
@@ -675,6 +793,7 @@ public class Sketchpad extends Screen {
   TextField heightField = new TextField("config-height", "Height: ");
   TextField timeLengthField = new TextField("config-timelength", "Video length: ");
   TextField framerateField = new TextField("render-framerate", "Framerate: ");
+  TextField bpmField = new TextField("config-bpm", "BPM: ");
   private boolean smoothChangesMade = false;
   public void displayMenu() {
     if (menuShown()) {
@@ -688,7 +807,7 @@ public class Sketchpad extends Screen {
     if (configMenu) {
       
       // Background
-      gui.sprite("config-back-1", "black");
+      gui.spriteVary("config-back-1", "black");
       
       // Title
       textSprite("config-menu-title", "--- Sketch config ---");
@@ -706,7 +825,7 @@ public class Sketchpad extends Screen {
       // Time length field
       timeLengthField.display();
       // Lil button next to timelength field to sync time to music
-      if (ui.button("config-syncmusictime", "music_time_128", "")) {
+      if (ui.buttonVary("config-syncmusictime", "music_time_128", "")) {
         selectedField = null;
         sound.playSound("select_any");
         timeLengthField.value = str(sound.getCurrentMusicDuration());
@@ -767,6 +886,7 @@ public class Sketchpad extends Screen {
       }
       
       
+      // Music selection field
       String musicDisp = (musicFiles.length > 0 ? selectedMusic : "(no files available)");
       if (selectedMusic.length() == 0) musicDisp = "(None)";
       if (textSprite("config-music", "Music: "+musicDisp) && !ui.miniMenuShown()) {
@@ -793,22 +913,55 @@ public class Sketchpad extends Screen {
         }
       }
       
+      // BPM field
+      bpmField.display();
+      
+      // Shader selection
+      String shaderDisp = (loadedShaders.length > 0 ? selectedShader : "(no shaders)");
+      if (shaderDisp.length() == 0) shaderDisp = "(None)";
+      if (textSprite("config-shader", "Post-processing shader: "+shaderDisp) && !ui.miniMenuShown()) {
+        if (loadedShaders.length > 0) {
+          String[] labels = new String[loadedShaders.length+1];
+          Runnable[] actions = new Runnable[loadedShaders.length+1];
+          
+          // None option
+          labels[0] = "(None)";
+          actions[0] = new Runnable() {public void run() { selectedShader = ""; }};
+          
+          for (int i = 0; i < loadedShaders.length; i++) {
+            final int index = i;
+            labels[i+1]  = loadedShaders[i];
+            actions[i+1] = new Runnable() {
+              public void run() { 
+                selectedShader = loadedShaders[index]; 
+              }
+            };
+          }
+          
+          ui.createOptionsMenu(labels, actions);
+        }
+      }
+      
+      
+      
       // Cross button
-      if (ui.button("config-cross-1", "cross", "")) {
+      if (ui.buttonVary("config-cross-1", "cross", "")) {
         sound.playSound("select_smaller");
         input.keyboardMessage = code;
         configMenu = false;
       }
       
       // Apply button
-      if (ui.button("config-ok", "tick_128", "Apply")) {
+      if (ui.buttonVary("config-ok", "tick_128", "Apply")) {
         sound.playSound("select_any");
-        time = 0.;
+        //time = 0.;
         
         try {
           int wi = Integer.parseInt(widthField.value);
           int hi = Integer.parseInt(heightField.value);
           timeLength = Float.parseFloat(timeLengthField.value)*60.;
+          bpm = Float.parseFloat(bpmField.value);
+          sound.setBPM(bpm);
           
           // Only recreate if changes have been made.
           if (wi != (int)canvas.width ||
@@ -840,7 +993,7 @@ public class Sketchpad extends Screen {
     else if (renderMenu) {
       
       // Background
-      gui.sprite("render-back-1", "black");
+      gui.spriteVary("render-back-1", "black");
       
       // Title
       textSprite("render-menu-title", "--- Render ---");
@@ -922,7 +1075,7 @@ public class Sketchpad extends Screen {
       }
       
       // Close menu button
-      if (ui.button("render-cross-1", "cross", "")) {
+      if (ui.buttonVary("render-cross-1", "cross", "")) {
         sound.playSound("select_smaller");
         input.keyboardMessage = code;
         renderMenu = false;
@@ -947,19 +1100,19 @@ public class Sketchpad extends Screen {
     public void display() {
       String disp = gui.interactable ? "white" : "nothing";
       if (selectedField == this) {
-        gui.sprite(spriteName, disp);
+        gui.spriteVary(spriteName, disp);
         value = input.keyboardMessage;
       }
       else {
-        if (ui.button(spriteName, disp, "")) {
+        if (ui.buttonVary(spriteName, disp, "")) {
           selectedField = this;
           input.keyboardMessage = value;
           input.cursorX = input.keyboardMessage.length();
         }
       }
       
-      float x = gui.getSprite(spriteName).getX();
-      float y = gui.getSprite(spriteName).getY();
+      float x = gui.getSpriteVary(spriteName).getX();
+      float y = gui.getSpriteVary(spriteName).getY();
       
       
       app.textAlign(LEFT, TOP);
@@ -975,10 +1128,10 @@ public class Sketchpad extends Screen {
   
   public boolean textSprite(String name, String val) {
     String disp = gui.interactable ? "white" : "nothing";
-    boolean clicked = ui.button(name, disp, "");
+    boolean clicked = ui.buttonVary(name, disp, "");
     
-    float x = gui.getSprite(name).getX();
-    float y = gui.getSprite(name).getY();
+    float x = gui.getSpriteVary(name).getX();
+    float y = gui.getSpriteVary(name).getY();
     
     app.textAlign(LEFT, TOP);
     app.textSize(32);
@@ -986,6 +1139,112 @@ public class Sketchpad extends Screen {
     return clicked;
   }
   
+  private Runnable setSpriteMode(int mode) {
+    Runnable r = new Runnable() {
+      public void run() {
+        if (sprites.selectedSprite != null) {
+          sprites.selectedSprite.mode = mode;
+        }
+      }
+    };
+    
+    return r;
+  }
+  
+  private Runnable resetSpriteSize(int scale) {
+    Runnable r = new Runnable() {
+      public void run() {
+        if (sprites.selectedSprite != null) {
+          // Try catch here cus otherwise we'd have to do multiple null checks here and I'd rather my code
+          // not be an untidy mess.
+          try {
+            PImage img = display.systemImages.get(sprites.selectedSprite.imgName).pimage;
+            int wi = img.width;
+            int hi = img.height;
+            sprites.selectedSprite.setWidth(wi*scale);
+            sprites.selectedSprite.setHeight(hi*scale);
+          }
+          catch (NullPointerException e) {
+            console.warn(e.getMessage());
+          }
+        }
+      }
+    };
+    
+    return r;
+  }
+  
+  private void showSpriteMenu() {
+    String[] labels = new String[6];
+    Runnable[] actions = new Runnable[6];
+    
+    labels[0] = "Set mode SINGLE";
+    actions[0] = new Runnable() {
+      public void run() {
+        if (sprites.selectedSprite != null) {
+          SpriteSystemPlaceholder.Sprite s = sprites.selectedSprite;
+          sprites.selectedSprite.mode = sprites.SINGLE;
+          if (s.getX() > canvas.width || s.getX() < -s.getWidth() || s.getY() > canvas.height || s.getY() < -s.getHeight()) {
+            s.setX(0);
+            s.setY(0);
+          }
+        }
+      }
+    };
+    
+    labels[1] = "Set mode DOUBLE";
+    actions[1] = new Runnable() {
+      public void run() {
+        if (sprites.selectedSprite != null) {
+          SpriteSystemPlaceholder.Sprite s = sprites.selectedSprite;
+          sprites.selectedSprite.mode = sprites.DOUBLE;
+          if (s.getX() > canvas.width || s.getX() < -s.getWidth() || s.getY() > canvas.height || s.getY() < -s.getHeight()) {
+            s.setX(0);
+            s.setY(0);
+          }
+        }
+      }
+    };
+    
+    labels[2] = "Set mode VERTEX";
+    actions[2] = new Runnable() {
+      public void run() {
+        if (sprites.selectedSprite != null) {
+          SpriteSystemPlaceholder.Sprite s = sprites.selectedSprite;
+          if (s.getX() > canvas.width || s.getX() < -s.getWidth() || s.getY() > canvas.height || s.getY() < -s.getHeight()) {
+            s.setX(0);
+            s.setY(0);
+          }
+          sprites.selectedSprite.mode = sprites.VERTEX;
+          s.vertex.v[0].x = s.getX();
+          s.vertex.v[0].y = s.getY();
+          s.vertex.v[1].x = s.getX()+s.getWidth();
+          s.vertex.v[1].y = s.getY();
+          s.vertex.v[2].x = s.getX()+s.getWidth();
+          s.vertex.v[2].y = s.getY()+s.getHeight();
+          s.vertex.v[3].x = s.getX();
+          s.vertex.v[3].y = s.getY()+s.getHeight();
+        }
+      }
+    };
+    
+    //labels[3] = "Set mode ROTATE";
+    //actions[3] = setSpriteMode(sprites.ROTATE);
+    
+    labels[3] = "Reset size (x1)";
+    actions[3] = resetSpriteSize(1);
+    
+    // Same as before, but we just slap *2 on to it
+    labels[4] = "Reset size (x2)";
+    actions[4] = resetSpriteSize(2);
+    
+    // Same as before, but we just slap *3 on to it
+    labels[5] = "Reset size (x3)";
+    actions[5] = resetSpriteSize(3);
+    
+    
+    ui.createOptionsMenu(labels, actions);
+  }
   
   
   
@@ -1004,16 +1263,12 @@ public class Sketchpad extends Screen {
     // Check frames folder
     // Using File class cus we need to make dir if it dont exist
     String framesPath = engine.APPPATH+"frames/";
-    console.log(framesPath);
     File f = new File(framesPath);
     if (!f.exists()) {
       f.mkdir();
     }
     
     // Create our canvases (absolutely no scaling allowed)
-    shaderCanvas = createGraphics(canvas.width, canvas.height, P2D);
-    ((PGraphicsOpenGL)shaderCanvas).textureSampling(2);   // Disable texture smoothing
-    
     if (upscalePixels != 1.) {
       scaleCanvas = createGraphics(int(canvas.width*upscalePixels), int(canvas.height*upscalePixels), P2D);
       ((PGraphicsOpenGL)scaleCanvas).textureSampling(2);   // Disable texture smoothing
@@ -1056,13 +1311,17 @@ public class Sketchpad extends Screen {
     // Display compilation status
     if (!compiling.get() && once.compareAndSet(true, false)) {
       if (!successful.get()) {
-        console.log(plugin.errorOutput);
+        errorLog = plugin.errorOutput;
+        app.textSize(20);
+        errorHeight = getTextHeight(errorLog);
+        errorMenu = true;
         pause();
       }
       else {
+        errorMenu = false;
         console.log("Successful compilation!");
         play();
-        time = 0.;
+        //time = 0.;
       }
     }
     
@@ -1074,7 +1333,7 @@ public class Sketchpad extends Screen {
     sprites.setDelta(getDelta());
     
     // Switch canvas, then begin running the plugin code
-    if (successful.get() && !compiling.get() && !loading.get()) {
+    if (codeOK()) {
       canvas.beginDraw();
       canvas.fill(255, 255);
       display.setPGraphics(canvas);
@@ -1083,6 +1342,18 @@ public class Sketchpad extends Screen {
     }
     sprites.updateSpriteSystem();
     display.setPGraphics(app.g);
+    
+    if (codeOK()) {
+      shaderCanvas.beginDraw();
+      // Apply post-processing shader
+      if (selectedShader.length() > 0 && shaderParams != null) {
+        display.shaderUniformList(shaderCanvas, selectedShader, shaderParams);
+      }
+      shaderCanvas.clear();
+      shaderCanvas.image(canvas, 0, 0, shaderCanvas.width, shaderCanvas.height);
+      shaderCanvas.endDraw();
+    }
+    // Still need to draw to the shader canvas even if no shader's selected.
     
     // This is simply to allow a few frames for the UI to disappear for user feedback.
     // We skip rendering if true here.
@@ -1105,14 +1376,6 @@ public class Sketchpad extends Screen {
     if (rendering && !converting && successful.get() && !compiling.get()) {
       // This path has already been created so it will DEFO work
       String frame = engine.APPPATH+"frames/"+nf(renderFrameCount++, 6, 0)+".tiff";
-      
-      // Do shader stuff (TODO later)
-      // And another TODO: optimise, if we don't have any shaders,
-      // save directly from canvas instead (big performance saves!)
-      shaderCanvas.beginDraw();
-      shaderCanvas.clear();
-      shaderCanvas.image(canvas, 0, 0, shaderCanvas.width, shaderCanvas.height);
-      shaderCanvas.endDraw();
       
       // Do scaling (yay)
       // But if we don't have scaling enabled skip this step, will save performance and time.
@@ -1170,6 +1433,7 @@ public class Sketchpad extends Screen {
         // Add to systemimages so we can use it in our sprites
         display.systemImages.put(imagesInSketch.get(i), new DImage(largeimg, loadedImages.get(i)));
         
+        
         if (i == 0) {
           if (configJSON != null) {
             canvasSmooth = configJSON.getInt("smooth", 1);
@@ -1181,9 +1445,15 @@ public class Sketchpad extends Screen {
           input.keyboardMessage = code;
           input.cursorX = code.length();
           compileCode(code);
+          
         }
       }
       
+      // Update music time so functions like beat() work properly
+      sound.setCustomMusicTime(time/60f);
+      
+      
+      // Run the actual sketchio file's code.
       runCanvas();
       displayCanvas();
       
@@ -1195,11 +1465,18 @@ public class Sketchpad extends Screen {
         selectedPane = 0;
       }
       
+      // Show error output.
+      if (errorMenu) {
+        showError();
+      }
+      
+      checkForFileUpdates();
+      
       // we "stop" the music by simply muting the audio, in the background it's still playing tho,
       // but it makes coding a lot more simple.
       if (playing && !rendering) {
         //sound.setMusicVolume(musicVolume);
-        sound.syncMusic(time/60.);
+        sound.syncMusic(time/60f);
       }
       else {
         //sound.setMusicVolume(0.);
@@ -1277,6 +1554,7 @@ public class Sketchpad extends Screen {
         widthField.value = str(canvas.width);
         heightField.value = str(canvas.height);
         timeLengthField.value = str(timeLength/60.);
+        bpmField.value = str(bpm);
         selectedField = null;
         configMenu = true;
         input.keyboardMessage = "";
@@ -1297,16 +1575,7 @@ public class Sketchpad extends Screen {
       }
       
       if (ui.button("back_button", "back_arrow_128", "Explorer")) {
-        sound.playSound("select_any");
-        sound.stopMusic();
-        
-        // TODO: really need some sort of file change detection instead of relying on the
-        // editor being hidden to know whether or not we have an outdated version in memory.
-        if (codeEditorShown) {
-          saveScripts();
-          sound.playSound("chime");
-        }
-        previousScreen();
+        quit();
       }
       
       if (compiling.get()) {
@@ -1324,6 +1593,20 @@ public class Sketchpad extends Screen {
     return !rendering && (selectedPane == 0 || selectedPane == TIMELINE_PANE);
   }
   
+  public void quit() {
+    terminateFileUpdateThread();
+    sound.playSound("select_any");
+    sound.stopMusic();
+    
+    // TODO: really need some sort of file change detection instead of relying on the
+    // editor being hidden to know whether or not we have an outdated version in memory.
+    if (codeEditorShown) {
+      saveScripts();
+      sound.playSound("chime");
+    }
+    previousScreen();
+  }
+  
   public void lowerBar() {
     //display.shader("fabric", "color", 0.43,0.4,0.42,1., "intensity", 0.1);
     myLowerBarColor = color(78, 73, 73);
@@ -1334,14 +1617,24 @@ public class Sketchpad extends Screen {
     float BAR_X_LENGTH = WIDTH-120.-BAR_X_START;
     
     // Display timeline
+    // bar
     float y = HEIGHT-myLowerBarWeight;
     app.fill(50);
     app.noStroke();
     app.rect(BAR_X_START, y+(myLowerBarWeight/2)-2, BAR_X_LENGTH, 4);
     
+    // Times
+    app.textAlign(LEFT, CENTER);
+    app.fill(255);
+    app.textFont(engine.DEFAULT_FONT, 20);
+    app.text("T "+PApplet.nf(time/60f, 2, 2) + "\nB " + PApplet.nf(sound.beat+1, 3) + ":" + (sound.step+1),
+    BAR_X_START+BAR_X_LENGTH+10,
+    y+(myLowerBarWeight/2));
+    
     float percent = time/timeLength;
     float timeNotchPos = BAR_X_START+BAR_X_LENGTH*percent;
     
+    // Notch
     app.fill(255);
     app.rect(timeNotchPos-4, y+(myLowerBarWeight/2)-25, 8, 50); 
     
@@ -1356,26 +1649,27 @@ public class Sketchpad extends Screen {
         }
         
         // Messy code over there so it only acts once
-        if (input.primaryClick) {
+        if (input.primaryOnce) {
           selectedPane = TIMELINE_PANE;
         }
       }
       else {
         // If in play button area
-        if (input.primaryClick && selectedPaneTimeline()) {
+        if (input.primaryOnce && selectedPaneTimeline()) {
           // Toggle play/pause button
           togglePlay();
           // Restart if at end
           if (playing && time > timeLength) time = 0.;
         }
         // Right click action to show minimenu
-        else if (input.secondaryClick && selectedPaneTimeline()) {
+        else if (input.secondaryOnce && selectedPaneTimeline()) {
           String[] labels = new String[1];
           Runnable[] actions = new Runnable[1];
           
           labels[0] = loop ? "Disable loop" : "Enable loop";
           actions[0] = new Runnable() {public void run() {
               loop = !loop;
+              saveConfig();
           }};
           
           ui.createOptionsMenu(labels, actions);
@@ -1472,8 +1766,26 @@ public class Sketchpad extends Screen {
           t = ex;
         }
         if (t != null) {
-          t.printStackTrace();
-          console.warn("createMovie: Failed to create movie, sorry");
+          // Create error log
+          String log = "FFMPEG FAILED TO RENDER\nMessage: "+t.getMessage()+"\n\n";
+          
+          // Write stack trace
+          StringWriter sw = new StringWriter();
+          PrintWriter pw = new PrintWriter(sw);
+          t.printStackTrace(pw);
+          String sStackTrace = sw.toString();
+          log += "Stack trace: "+sStackTrace+"\n\n";
+          
+          log += "FFMPEG log: "+ffmpeg.log;
+          
+          String[] write = new String[1];
+          write[0] = log;
+          
+          app.saveStrings(engine.APPPATH+"ffmpeg_errlog.txt", write);
+          
+          file.open(engine.APPPATH+"ffmpeg_errlog.txt");
+          
+          console.warn("createMovie: Failed to create movie, check ffmpeg_errlog.txt for debug info.");
         }
         else {
           console.log("Done render!");
@@ -1543,13 +1855,120 @@ public class Sketchpad extends Screen {
     
     // Include music
     String musicPath = sketchiePath+"music/"+selectedMusic;
-    if (!file.exists(musicPath)) {
+    if (!file.exists(musicPath) || selectedMusic.equals("")) {
       musicPath = "";
     }
+    
     createMovie(outputFolder+nf(outIndex, 4, 0)+ext, musicPath, engine.APPPATH+"frames/", wi, hi, (double)renderFramerate, renderFormat);
   }
   
   
+  //////////////////////////////////////
+  // UPDATE CHECKING THREAD
+  
+  // file updates thread
+  private Thread fileUpdatesThread = null;
+  private AtomicBoolean terminateUpdatesThread = new AtomicBoolean(false);
+  
+  // updateItems must NOT be touched unless fileUpdateAvailable is true.
+  private ArrayList<String> updateItems = new ArrayList<String>();
+  private HashSet<String> imgsMap = new HashSet<String>();
+  private AtomicBoolean fileUpdateAvailable = new AtomicBoolean(false);
+  
+  private void startFileUpdateThread() {
+    String imgPath = "";
+    if (file.exists(sketchiePath+"imgs")) imgPath = sketchiePath+"imgs";
+    if (file.exists(sketchiePath+"img")) imgPath = sketchiePath+"img";
+    
+    final String imgPathFinal = imgPath;
+    
+    // Prepare our thread code
+    fileUpdatesThread = new Thread(new Runnable() {
+        public void run() {
+          while (true) {
+            boolean update = false;
+            // fileUpdateAvailable being true at this stage is a sign that the main thread
+            // hasn't finished loading the new assets, so skip this file check if it's true.
+            if (fileUpdateAvailable.get() == false) {
+            
+              // Check files
+              File[] imgs = (new File(imgPathFinal)).listFiles();
+              for (File f : imgs) {
+                // Basically check if files that weren't previously in the dir are now in the dir
+                String name = file.getIsolatedFilename(f.getAbsolutePath().replaceAll("\\\\", "/"));
+                if (!imgsMap.contains(name)) {
+                  update = true;
+                  updateItems.add(f.getAbsolutePath().replaceAll("\\\\", "/"));
+                  imgsMap.add(name);
+                }
+              }
+            }
+            
+            
+            // After all the file checking
+            if (update) {
+              fileUpdateAvailable.set(true);
+            }
+            try {
+              Thread.sleep(1000);
+            }
+            catch (InterruptedException e) {
+              // Finish up and exit loop when called
+              if (terminateUpdatesThread.compareAndSet(true, false) == true) {
+                break;
+              }
+            }
+          }
+        }
+      }
+    );
+    
+    fileUpdatesThread.start();
+    
+  }
+  
+  private void terminateFileUpdateThread() {
+    if (fileUpdatesThread != null) {
+      // Terminate it.
+      terminateUpdatesThread.set(true);
+      fileUpdatesThread.interrupt();
+    }
+  }
+  
+  private void checkForFileUpdates() {
+    // Update assets if the file update thread detects something
+    if (fileUpdateAvailable.get() == true) {
+      int count = 0;
+      for (String path : updateItems) {
+        PImage img = loadImage(path);
+        LargeImage largeimg = display.createLargeImage(img);
+        
+        // Add to systemimages so we can use it in our sprites
+        display.systemImages.put(file.getIsolatedFilename(path), new DImage(largeimg, img));
+        count++;
+      }
+      updateItems.clear();
+      
+      if (count == 1) console.log("Updated 1 item.");
+      else console.log("Updated "+count+" items.");
+      
+      fileUpdateAvailable.set(false);
+    }
+  }
+  
+  
+  //////////////////////////////////////
+  // CUSTOM COMMANDS
+  protected boolean customCommands(String command) {
+    if (engine.commandEquals(command, "/reload")) {
+      loadSketchieInSeperateThread(sketchiePath);
+      console.log("Reloading...");
+      return true;
+    }
+    else {
+      return false;
+    }
+  }
   
   
   

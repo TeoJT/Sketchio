@@ -20,6 +20,8 @@ class FFmpegEngine {
 
   // https://github.com/eugeneware/ffmpeg-static/releases/download/b5.0.1/darwin-arm64.gz
   static final String DOWNLOAD_URL = "";
+  
+  public String log = "";
 
 
   FFmpegEngine() {
@@ -57,6 +59,9 @@ class FFmpegEngine {
 
   void write(File movieFile, File[] imgFiles, File soundFile,
              int width, int height, double fps, String formatName) throws IOException {
+    
+    log = "";
+    
     // Write a temporary file with the names of all the images.
     // This removes the requirement for images using %04d format (and having
     // to detect the exact variant). Also, the number of images is likely to
@@ -234,6 +239,8 @@ class FFmpegEngine {
     Process p = new ProcessBuilder(cmd).start();
     StreamGobbler outputGobbler = new StreamGobbler(p.getInputStream(), System.out::println);
     StreamGobbler errorGobbler = new StreamGobbler(p.getErrorStream(), line -> {
+      log += line+"\n";
+      
       // TODO handle process.isCanceled()
       Matcher m = framePattern.matcher(line);
       if (m.find()) {

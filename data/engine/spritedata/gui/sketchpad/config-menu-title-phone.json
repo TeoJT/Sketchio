@@ -1,0 +1,17 @@
+{
+  "h": 60,
+  "vy0": 160,
+  "vx1": 260,
+  "vy2": 224,
+  "vx0": 196,
+  "vy1": 160,
+  "mode": "DOUBLE",
+  "vx3": 196,
+  "vx2": 260,
+  "vy3": 224,
+  "w": 60,
+  "name": "config-menu-title-phone",
+  "x": 196,
+  "y": 160,
+  "locked": false
+}

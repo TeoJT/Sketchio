@@ -142,12 +142,20 @@ public class CustomPlugin {
     call(17, name, x, y, w, h);
   }
 
-  public int beat() {
+  public int beatIndex() {
     return getInt(18);
   }
 
-  public int step() {
+  public int stepIndex() {
     return getInt(19);
+  }
+
+  public int beat() {
+    return beatIndex()+1;
+  }
+
+  public int step() {
+    return stepIndex()+1;
   }
 
   ///////////////////
@@ -166,6 +174,14 @@ public class CustomPlugin {
   
   public float beatSawOffbeat(int beatoffset, int everyxbeat) {
     return beatSaw(beatoffset, 2, everyxbeat);
+  }
+
+  public float beatSawOffbeat(int beatoffset) {
+    return beatSaw(beatoffset, 2, 1);
+  }
+  
+  public float beatSawOffbeat() {
+    return beatSaw(0, 2, 1);
   }
   
   public float beatSaw() {
@@ -186,12 +202,23 @@ public class CustomPlugin {
     return getFloat(23, beat);
   }
 
+  public boolean between(int start, int end) {
+    return beat() >= start && beat() <= end;
+  }
 
-
-  
-
-  public boolean beatBetween(int start, int end) {
-    return false;
+  public void shaderUniforms(Object... uniforms) {
+    apiOpCode = 24;
+    if (uniforms.length >= 127) {
+      warn("You've put too many args in shaderUniforms()!");
+      return;
+    }
+    // First arg used for length of list
+    args[0] = uniforms.length;
+    // Continue here.
+    for (int i = 1; i < uniforms.length+1; i++) {
+      args[i] = uniforms[i-1];
+    }
+    apiCall.run();
   }
 
 

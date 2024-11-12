@@ -302,6 +302,12 @@ if (os.path.isdir("sketchio_windows_"+version)):
     if (os.path.isdir(new_name_windows+"/data/pocket")):
         shutil.rmtree(new_name_windows+"/data/pocket")
         print("Removed pocket folder.")
+    if (os.path.isdir(new_name_windows+"/data/frames")):
+        shutil.rmtree(new_name_windows+"/data/frames")
+        print("Removed frames folder.")
+    if (os.path.isdir(new_name_windows+"/data/output")):
+        shutil.rmtree(new_name_windows+"/data/output")
+        print("Removed output folder.")
 
     # Also recursively search and remove any files beginning with .pixelrealm from the folders
     files_to_remove = []

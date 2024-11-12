@@ -1,0 +1,17 @@
+{
+  "h": 64,
+  "vy0": 177,
+  "vx1": 445,
+  "vy2": 241,
+  "vx0": 381,
+  "vy1": 177,
+  "mode": "SINGLE",
+  "vx3": 381,
+  "vx2": 445,
+  "vy3": 241,
+  "w": 64,
+  "name": "render-menu-title-phone",
+  "x": 381,
+  "y": 177,
+  "locked": false
+}

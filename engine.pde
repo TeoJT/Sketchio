@@ -34,6 +34,7 @@ import java.net.URLClassLoader;
 import java.net.URL;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.io.OutputStream;
 import java.io.InputStreamReader;
 import java.util.Iterator;   // Used by the stack class at the bottom
 import java.util.Arrays;   // Used by the stack class at the bottom
@@ -45,9 +46,9 @@ import java.util.Arrays;   // Used by the stack class at the bottom
 public class TWEngine {
   //*****************CONSTANTS SETTINGS**************************
   // Info and versioning
-  public static final String APP_NAME        = "Timeway";
+  public static final String APP_NAME        = "Sketchio";
   public static final String AUTHOR      = "Teo Taylor";
-  public static final String VERSION     = "0.1.3";
+  public static final String VERSION     = "0";
   public static final String VERSION_DESCRIPTION = 
     "- Added previews to entries in pixel realm\n"+
     "- Performance improvements\n"+
@@ -80,6 +81,7 @@ public class TWEngine {
   public final String DEFAULT_MUSIC_PATH  = "engine/music/default.wav";
   public       String DEFAULT_UPDATE_PATH = "";  // Set up by setup()
   public final String BOILERPLATE_PATH    = "engine/plugindata/plugin_boilerplate.java";
+  public final String PDFTOPNG_PATH       = "engine/bin/windows/pdftopng.exe";
 
   // Static constants
   public static final float   KEY_HOLD_TIME       = 30.; // 30 frames
@@ -1040,6 +1042,7 @@ public class TWEngine {
     public final float BASE_FRAMERATE = 60.;
     public final int CLEARLIST_SIZE = 4096;
     private float delta = 0.;
+    private float forcedDelta = -1f;
     
     private boolean showFPS = false;
     
@@ -1148,6 +1151,7 @@ public class TWEngine {
           displayScale *= 2.;
           phoneMode = true;
         }
+        else phoneMode = false;
         
         console.info("init: width/height set to "+str(WIDTH)+", "+str(HEIGHT));
         
@@ -1271,6 +1275,7 @@ public class TWEngine {
         getShaderWithParams(shaderName, uniforms)
       );
     }
+    
     
     public void reloadShaders() {
       HashMap<String, PShaderEntry> sh = new HashMap<String, PShaderEntry>(shaders);
@@ -1451,7 +1456,14 @@ public class TWEngine {
       );
     }
     
-    public PShader getShaderWithParams(String shaderName, Object... uniforms) {
+    public void shaderUniformList(PGraphics framebuffer, String shaderName, Object[] uniforms) {
+      initShader(shaderName);
+      framebuffer.shader(
+        getShaderWithParams(shaderName, uniforms)
+      );
+    }
+    
+    public PShader getShaderWithParams(String shaderName, Object[] uniforms) {
       PShaderEntry shentry = shaders.get(shaderName);
       if (shentry == null) {
         console.warn("Shader "+shaderName+" not found!");
@@ -1520,6 +1532,97 @@ public class TWEngine {
     public void setPGraphics(PGraphics p) {
       currentPG = p;
     }
+    
+    public void img(String name, float vx1, float vy1, float vx2, float vy2, float vx3, float vy3, float vx4, float vy4) {
+      if (systemImages.get(name) != null) {
+        img(systemImages.get(name), vx1, vy1, vx2, vy2, vx3, vy3, vx4, vy4);
+      } else {
+        console.warnOnce("Image "+name+" does not exist");
+      }
+    }
+    
+    
+    public void img(DImage image, float vx1, float vy1, float vx2, float vy2, float vx3, float vy3, float vx4, float vy4) {
+      PImage img = null;
+      
+      if (image == null) {
+        console.warnOnce("Image listed as 'loaded' but image doesn't seem to exist.");
+        return;
+      }
+      else if (image.width == -1 || image.height == -1) {
+        img = errorImg;
+        console.warnOnce("Corrupted image.");
+      }
+      else {
+        img = image.pimage;
+      }
+      
+      
+      if (image.width > 0 && image.height > 0) {
+        
+        
+      
+        currentPG.noFill();
+        currentPG.noStroke();
+        currentPG.beginShape(QUADS);
+        //if (false) {
+        //  this.bind(currentPG, image.largeImage);
+        //  this.shader(currentPG, "largeimg");
+        
+        //  currentPG.vertex(vx1, vy1, 0f, 0f);
+        //  currentPG.vertex(vx2, vy2, 1f, 0f);
+        //  currentPG.vertex(vx3, vy3, 1f, 1f);
+        //  currentPG.vertex(vx4, vy4, 0f, 1f);
+        //}
+        //else if (true) {
+          
+          // Annnnd a wireframe
+          if (wireframe) {
+            currentPG.stroke(sin(selectBorderTime)*127+127, 100);
+            selectBorderTime += 0.1*getDelta();
+            currentPG.strokeWeight(3);
+          } else {
+            currentPG.noStroke();
+          }
+        
+          currentPG.texture(img);
+          currentPG.vertex(vx1, vy1, 0f, 0f);
+          currentPG.vertex(vx2, vy2, img.width, 0f);
+          currentPG.vertex(vx3, vy3, img.width, img.height);
+          currentPG.vertex(vx4, vy4, 0f, img.height);
+        //}
+        
+        currentPG.endShape();
+        currentPG.flush();
+        
+        //if (image.mode == 2) {
+        //  currentPG.resetShader();
+          
+        //  // Annnnd a wireframe
+        //  if (wireframe) {
+        //    currentPG.stroke(sin(selectBorderTime)*127+127, 100);
+        //    selectBorderTime += 0.1*getDelta();
+        //    currentPG.noFill();
+        //    currentPG.strokeWeight(3);
+        //    currentPG.beginShape(QUADS);
+        //    currentPG.vertex(vx1, vy1);
+        //    currentPG.vertex(vx2, vy2);
+        //    currentPG.vertex(vx3, vy3);
+        //    currentPG.vertex(vx4, vy4);
+        //    currentPG.endShape();
+        //  } 
+        //  currentPG.noStroke();
+          
+        //}
+        
+        return;
+      } else {
+        app.noStroke();
+        return;
+      }
+    }
+    
+    
     
     public void img(DImage image, float x, float y, float w, float h) {
       
@@ -1674,6 +1777,21 @@ public class TWEngine {
     }
     
     public void displayScreens() {
+      // Set the display scale; since I've been programming this with my Surface Book 2 at high density resolution,
+      // the original display area is 1500x1000, so we simply divide this device's display resolution by 1500 to
+      // get the scale.
+      displayScale = float(app.width)/1500.;
+      
+      if (HEIGHT > WIDTH) {
+        displayScale *= 2.;
+        phoneMode = true;
+      }
+      else phoneMode = false;
+      
+      WIDTH = float(app.width)/displayScale;
+      HEIGHT = float(app.height)/displayScale;
+      
+      
       if (transitionScreens) {
         power.setAwake();
         transition = ui.smoothLikeButter(transition);
@@ -1761,7 +1879,12 @@ public class TWEngine {
       time += delta;
     }
     
+    public void forceDelta(float forcedDelta) {
+      this.forcedDelta = forcedDelta;
+    }
+    
     public float getDelta() {
+      if (forcedDelta > 0f) return forcedDelta;
       return delta;
     }
     
@@ -1820,7 +1943,7 @@ public class TWEngine {
         public float yappear = 1.;
         public boolean disappear = false;
 
-        final public float APPEAR_SPEED = 0.1;
+        final public float APPEAR_SPEED = 0.2;
         final public color BACKGROUND_COLOR = color(0, 0, 0, 150);
         
         public MiniMenu() {
@@ -1880,7 +2003,7 @@ public class TWEngine {
             // If we click away from the minimenu, close the minimenu
             if ((mouseX() > x && mouseX() < x+this.width && mouseY() > y && mouseY() < y+this.height) == false) {
 
-                if (input.primaryClick) {
+                if (input.primaryOnce) {
                     close();
                 }
             }
@@ -1995,7 +2118,7 @@ public class TWEngine {
           float xx = this.x+OFFSET_SPACING_X+SPACING;
           if (mouseX() > this.x && mouseX() < this.x+this.width && mouseY() > yy && mouseY() < yy+SIZE+SPACING) {
             app.fill(HOVER_COLOR);
-            if (input.primaryClick && selectable) {
+            if (input.primaryOnce && selectable) {
               sound.playSound("select_any");
               actions.get(i).run();
               selectedOption = op;
@@ -2109,7 +2232,7 @@ public class TWEngine {
                     wasHovered = true;
 
                     // If clicked 
-                    if (input.primaryClick && !disappear) {
+                    if (input.primaryOnce && !disappear) {
                         selectedColor = colorArray[i];
                         
                         if (runWhenPicked != null) {
@@ -2262,7 +2385,7 @@ public class TWEngine {
       currentSpritePlaceholderSystem.suppressSpriteWarning = false;
   
       // Only when the button is actually clicked.
-      return hover && input.primaryClick;
+      return hover && input.primaryOnce;
     }
     
     public boolean basicButton(String display, float x, float y, float wi, float hi) {
@@ -2279,7 +2402,7 @@ public class TWEngine {
       textAlign(CENTER, CENTER);
       fill(c);
       text(display, x+wi/2, y+hi/2);
-      return hovering && input.primaryClick;
+      return hovering && input.primaryOnce;
     }
     
     public void loadingIcon(float x, float y, float widthheight) {
@@ -2358,6 +2481,7 @@ public class TWEngine {
     public final String MUSIC_CACHE_FILE = "music_cache.json";
     public final int MAX_MUSIC_CACHE_SIZE_KB = 1024*256;  // 256 MB
     public final String[] FORCE_CACHE_MUSIC = {
+      "engine/music/default.wav"
     };
     // For when porting to other platforms which don't support gstreamer (*ahem* android *ahem*) 
     public boolean DISABLE_GSTREAMER = false;
@@ -2494,7 +2618,8 @@ public class TWEngine {
       
       public void volume(float vol) {
         volume = vol;
-        if (mode == STREAM && !DISABLE_GSTREAMER) streamMusic.volume(vol);
+        if (mode == CACHED) cachedMusic.amp(vol);
+        else if (mode == STREAM && !DISABLE_GSTREAMER) streamMusic.volume(vol);
         else if (mode == ANDROID) androidMusic.volume(vol);
       }
       
@@ -3144,8 +3269,6 @@ public class TWEngine {
         reloadMusicPath = path;
       }
       
-      
-      
       // We don't need to boot up gstreamer in android cus gstreamer doesn't exist in android.
       if (startupGStreamer && !isAndroid()) {
         //console.log("startup gstreamer");
@@ -3293,17 +3416,35 @@ public class TWEngine {
     public int beat = 0;
     public int step = 0;
     
-    public float bpm = 1f;
+    private float bpm = 120f;
+    private float musicTime = 0f;
+    private boolean customTime = false;
     
-    public float getTime() {
-      if (streamerMusic != null) {
-        // TODO: getting time is slow for some reason.
-        return streamerMusic.time();
-      }
-      return 0f;
+    public void setCustomMusicTime(float t) {
+      customTime = true;
+      musicTime = t;
     }
     
+    public void setMusicTimeAuto() {
+      customTime = true;
+    }
     
+    public float getTime() {
+      if (customTime) {
+        return musicTime;
+      }
+      else {
+        if (streamerMusic != null) {
+          // TODO: getting time is slow for some reason.
+          return streamerMusic.time();
+        }
+        return 0f;
+      }
+    }
+    
+    public void setBPM(float bpm) {
+      this.bpm = bpm;
+    }
     
     public float beatToTime(int beat) {
       float beatspersecond = 60f/bpm;
@@ -3323,7 +3464,7 @@ public class TWEngine {
     
     public float beatSaw(int beatoffset, int stepoffset, int everyxbeat) {
       if (everyxbeat == 0) everyxbeat = 1;
-      float t = (getTime()/60f)+beatToTime(beatoffset, stepoffset);
+      float t = (getTime())+beatToTime(beatoffset, stepoffset);
     
       float beatspersecond = 60f/bpm;
       float beatfloat = (t/beatspersecond);
@@ -3350,7 +3491,7 @@ public class TWEngine {
     }
     
     public float stepSaw(int offset) {
-      float t = (getTime()/60f)+beatToTime(0, offset);
+      float t = (getTime())+beatToTime(0, offset);
     
       float beatspersecond = 60f/bpm;
       float stepfloat = (t/(beatspersecond/4f));
@@ -3361,9 +3502,15 @@ public class TWEngine {
     
     private void processBeat() {
       float t = 0f;
-      if (streamerMusic != null) {
-        // TODO: getting time is slow for some reason.
-        t = streamerMusic.time();
+      if (customTime) {
+        t = musicTime;
+      }
+      else {
+        if (streamerMusic != null) {
+          // TODO: getting time is slow for some reason.
+          t = streamerMusic.time();
+        }
+        musicTime = t;
       }
       if (bpm == 0f) return;
       
@@ -3374,6 +3521,10 @@ public class TWEngine {
     
       beat = (int)beatfloat;
       step = ((int)stepfloat)%4;
+      
+      if (!customTime) {
+        
+      }
     }
   
     public void processSound() {
@@ -3637,8 +3788,25 @@ public class TWEngine {
           everything.add(path.trim());
         }
       }
+      
+      // Recycle bin
+      if (!exists(APPPATH+RECYCLE_BIN_INFO)) {
+        recycleJson = new JSONArray();
+      }
+      else {
+        try {
+          recycleJson = loadJSONArray(APPPATH+RECYCLE_BIN_INFO);
+        }
+        catch (RuntimeException e) {
+          console.warn("Something went wrong with loading recycling bin info: "+e.getMessage());
+          recycleJson = new JSONArray();
+        }
+      }
     }
     
+    public final String RECYCLE_BIN_PATH = "recyclebin/";
+    public final String RECYCLE_BIN_INFO = RECYCLE_BIN_PATH+"recycle.json";
+    private JSONArray recycleJson = null;
     
     public boolean loading = false;
     public int MAX_DISPLAY_FILES = 2048; 
@@ -3721,6 +3889,39 @@ public class TWEngine {
       return true;
     }
     
+    
+    public void mkdir(String path) {
+      File f = new File(path);
+      if (!f.exists() || !f.isDirectory()) {
+        if (!f.mkdir()) {
+          console.warn("Couldn't remake directory "+getFilename(path));
+          return;
+        }
+      }
+    }
+    
+    
+    public boolean recycle(String oldLocation) {
+      String newName = nf(random(0, 99999999), 8, 0);
+      while (exists(APPPATH+RECYCLE_BIN_PATH+newName)) {
+        newName = nf(random(0, 99999999), 8, 0);
+      }
+      
+      mkdir(APPPATH+RECYCLE_BIN_PATH);
+      
+      if (!mv(oldLocation, APPPATH+RECYCLE_BIN_PATH+newName)) {
+        console.warn("Could not recycle "+getFilename(oldLocation)+", maybe file permissions denied?");
+        return false;
+      }
+      
+      JSONObject entry = new JSONObject();
+      entry.setString("name", newName);
+      entry.setString("old_location", oldLocation);
+      recycleJson.setJSONObject(recycleJson.size(), entry);
+      app.saveJSONArray(recycleJson, APPPATH+RECYCLE_BIN_INFO);
+      return true;
+    }
+    
     public boolean copy(String src, String dest) {
       //if (!exists(src)) {
       //  console.bugWarn("copy: "+src+" doesn't exist!");
@@ -3781,6 +3982,7 @@ public class TWEngine {
     }
   
     public void backupMove(String path) {
+      if (!exists(path)) return;
       String name = getFilename(path);
       String newPath = CACHE_PATH+"_"+name+"_"+getLastModified(path).replaceAll("[\\.:]", "-")+".txt";
       if (!mv(path, newPath)) {
@@ -3896,6 +4098,102 @@ public class TWEngine {
       return dir.substring(0, i);
     }
     
+    //C:/mydata/notebook/
+    //C:/mydata/notebook/hazy_era/recovery/006
+    
+    //hazy_era/recovery/006
+    
+    //C:/mydata/notebook/hazy_era/a/directory/of/thing
+    //C:/mydata/notebook/hazy_era/homen/002
+    
+    //C:/mydata/notebook/hazy_era/a/directory/of/   ../
+    //C:/mydata/notebook/hazy_era/a/directory/      ../../
+    //C:/mydata/notebook/hazy_era/a/                ../../../
+    //C:/mydata/notebook/hazy_era/                  ../../../../
+    //C:/mydata/notebook/hazy_era/homen/            ../../../../homen/
+    //C:/mydata/notebook/hazy_era/homen/002         ../../../../homen/002/
+    public String getRelativeDir(String from, String to) {
+      if (from == null || to == null) return "";
+      
+      try {
+        // Paranoid code.
+        from = directorify(from.replaceAll("\\\\", "/"));
+        to = directorify(to.replaceAll("\\\\", "/"));
+        
+        // We gonna construct a relative path starting with no string
+        String relative = "";
+        // Used for second step
+        int commonPathLength = 0;
+        int count = 0;
+        
+        // STEP 1: Backtrack paths.
+        // Condition to ensure we don't loop forever in case something goes terribly wrong
+        while (count < 999) {
+          // Before we (possibly) break, set commonPathLength for step 2.
+          // Remember we're processing from variable "from"
+          commonPathLength = from.length();
+          
+          // Can't go any further back if at root dir
+          if (atRootDir(from)) {
+            break;
+          }
+          // This condition checks for paths in common between from and to.
+          // For example, C:/mydata/notebook/hazy_era/homen/006 and C:/mydata/notebook/cool_summer/090623
+          // both have C:/mydata/notebook/ in their paths.
+          if (from.substring(0, PApplet.min(from.length(), to.length())).equals( to.substring(0, PApplet.min(from.length(), to.length())) )) {
+            break;
+          }
+          
+          // If common path not found yet, take a dir away and iterate again.
+          from = directorify(getPrevDir(from));
+          relative += "../"; // Ofc we're going back one dir
+          count++;  // Looplock prevention
+        }
+        if (count < 999 == false) {
+          console.bugWarn("getRelativeDir: Loop lock prevention for "+from+", "+to);
+          return "";
+        }
+        
+        // STEP 2: 
+        // Slap on the directories leading to "to"
+        // Take out the common path in "to" and append to relative.
+        relative += to.substring(commonPathLength);
+        return relative;
+      }
+      catch (Exception e) {
+        console.bugWarn("getRelativeDir: "+e.getMessage());
+        return "";
+      }
+      
+    }
+    
+    // Converts a path (created from getRelativeDir) back to absolute path given a starting path
+    public String relativeToAbsolute(String start, String relative) {
+      try {
+        String path = start;
+        // Turn into list
+        String[] elements = relative.split("/");
+        for (String s : elements) {
+          // Consume elements.
+          // .. means go back
+          // anything else means append to path.
+          //console.log(s);
+          if (s.equals("..")) {
+            path = directorify(getPrevDir(path));
+          }
+          else {
+            path += s;
+            path = directorify(path);
+          }
+        }
+        return path;
+      }
+      catch (Exception e) {
+        console.bugWarn("relativeToAbsolute: "+e.getMessage());
+        return DEFAULT_DIR;
+      }
+    }
+    
     public String directorify(String dir) {
       if (dir.charAt(dir.length()-1) != '/')  dir += "/";
       return dir;
@@ -3921,6 +4219,7 @@ public class TWEngine {
     
     // Yes.
     public boolean exists(String path) {
+      if (path == null) return false;
       boolean exists = (new File(path)).exists();
       return isAndroid() ? exists || everything.contains(path) : exists;
     }
@@ -3978,8 +4277,9 @@ public class TWEngine {
           path = path.substring(0, path.length()-1);
         }
         filenameWithExt = path.substring(index+1);
-      } else
+      } else {
         filenameWithExt = path;
+      }
       
       // Now strip off the ext.
       index = filenameWithExt.indexOf('.');
@@ -4012,6 +4312,8 @@ public class TWEngine {
         return "unknown_128";
       case FILE_TYPE_IMAGE:
         return "image_128";
+      case FILE_TYPE_PDF:
+        return "doc_128";
       case FILE_TYPE_VIDEO:
         return "media_128";
       case FILE_TYPE_MUSIC:
@@ -4046,8 +4348,10 @@ public class TWEngine {
   
       if (ext.equals("doc")
         || ext.equals("docx")
-        || ext.equals("txt")
-        || ext.equals("pdf")) return FileType.FILE_TYPE_DOC;
+        || ext.equals("txt")) return FileType.FILE_TYPE_DOC;
+        
+        
+      if (ext.equals("pdf")) return FileType.FILE_TYPE_PDF;
         
       if (ext.equals(ENTRY_EXTENSION))
         return FileType.FILE_TYPE_TIMEWAYENTRY;
@@ -4504,7 +4808,7 @@ public class TWEngine {
       if (ext.equals("png")) {
         return getPNGUncompressedSize(path);
       }
-      else if (ext.equals(ENTRY_EXTENSION)) {
+      else if (ext.equals(ENTRY_EXTENSION) || ext.equals("pdf")) {
         return 0;
       }
       else if (ext.equals("jpg") || ext.equals("jpeg")) {
@@ -4515,6 +4819,10 @@ public class TWEngine {
       }
       else if (ext.equals("bmp")) {
         return getBMPUncompressedSize(path);
+      }
+      else if (ext.equals("tiff")) {
+        // TODO: size estimation for tiff
+        return 99999;
       }
       else {
         console.bugWarn("getImageUncompressedSize: file format ("+ext+" is not an image format.");
@@ -4558,21 +4866,6 @@ public class TWEngine {
     private String exepath;
     private String javapath;
     private int cacheEntry = 0;
-
-    
-    // We need this because simply storing the output message in a command line
-    // is not sufficient; we need error code, whether it was successful or not etc.
-    class CmdOutput {
-      public int exitCode = -1;
-      public boolean success = false;
-      public String message = "";
-      
-      public CmdOutput(int ec, String mssg) {
-        exitCode = ec;
-        success =  (exitCode == 0);
-        message = mssg;
-      }
-    }
     
     public PluginModule() {
       // Load the boilerplate for plugin code.
@@ -4805,55 +5098,6 @@ public class TWEngine {
       return new Plugin();
     }
     
-    // Now this thing basically just runs a windows command, not too complicated.
-    // If I'm lucky enough, I think this thing should work in linux too even though
-    // the cmd system is completely different, because we're essentially just calling
-    // some java executables.
-    public CmdOutput runOSCommand(String... cmd) {
-      try {
-        // Run the OS command
-        Process process = Runtime.getRuntime().exec(cmd);
-        
-        // Get the messages from the console (so that we can get stuff like error messages).
-        BufferedReader stdInput = new BufferedReader(new InputStreamReader(process.getInputStream()));
-        BufferedReader stdError = new BufferedReader(new InputStreamReader(process.getErrorStream()));
-        
-        // This function should prolly run this in a different thread.
-        int exitCode = process.waitFor();
-        
-        // s will be used to read the stdout lines.
-        String s = null;
-        
-        // Where we'll actually store our stdoutput
-        String stdoutput = "";
-        
-        if (exitCode == 1) {
-          while ((s = stdInput.readLine()) != null) {
-              stdoutput += s+"\n";
-          }
-          // Truth be told, i should prolly have seperate stdout and stderr
-          // but I don't really mind combining it into one message.
-          while ((s = stdError.readLine()) != null) {
-              stdoutput += s+"\n";
-          }
-          
-          //System.out.println(stdoutput);
-        }
-        
-        //System.out.println("Exit code: "+exitCode);
-        // Done!
-        return new CmdOutput(exitCode, stdoutput);
-      }
-      // No need to do additional error checking here because I highly doubt we will get this kind
-      // of error unless we intentionally realllllllly mess up some files here.
-      catch (Exception e) {
-        console.warn("OS command exception: "+ e.getClass().getSimpleName());
-        console.warn(e.getMessage());
-        // 666 eeeeeevil number.
-        return new CmdOutput(666, e.getClass().getSimpleName());
-      }
-    }
-    
     // Use javac (java compiler) to turn our file into a .class file.
     // I have no idea what a .class file is lol.
     CmdOutput toClassFile(String inputFile) {
@@ -4889,11 +5133,11 @@ public class TWEngine {
       // run as if we've opened up cmd/terminal and are running our command.
       CmdOutput cmd = null;
       if (isWindows()) {
-        cmd = runOSCommand(javacPath, "-cp", processingCorePath+";"+pluginPath, inputFile);
+        cmd = runExecutableCommand(javacPath, "-cp", processingCorePath+";"+pluginPath, inputFile);
       }
       else {
         //cmd = runOSCommand("\""+javacPath+"\" -cp \""+processingCorePath+";"+pluginPath+"\" \""+inputFile+"\"");
-        cmd = runOSCommand(javacPath, "-cp", processingCorePath, inputFile);
+        cmd = runExecutableCommand(javacPath, "-cp", processingCorePath, inputFile);
       }
       return cmd;
     }
@@ -4918,7 +5162,7 @@ public class TWEngine {
       final String className = (new File(classFile)).getName();
       
       // And boom. It is then done.
-      runOSCommand(jarExePath, "cvf", out, "-C", classPath, className);
+      runExecutableCommand(jarExePath, "cvf", out, "-C", classPath, className);
       
       return out;
     }
@@ -5210,18 +5454,123 @@ public class TWEngine {
     }
   }
   
-  public void runOSCommand(String cmd) {
-    if (isWindows()) {
-        String[] cmds = new String[1];
-        cmds[0] = cmd;
-        app.saveStrings(APPPATH+WINDOWS_CMD, cmds);
-        delay(100);
-        file.open(APPPATH+WINDOWS_CMD);
-    }
-    else {
-      console.bugWarn("runOSCommand: support for os not implemented!");
+  
+
+    
+  // We need this because simply storing the output message in a command line
+  // is not sufficient; we need error code, whether it was successful or not etc.
+  class CmdOutput {
+    public int exitCode = -1;
+    public boolean success = false;
+    public String message = "";
+    
+    public CmdOutput(int ec, String mssg) {
+      exitCode = ec;
+      success =  (exitCode == 0);
+      message = mssg;
     }
   }
+
+  //public void runExecutableCommand(String cmd) {
+  //  if (isWindows()) {
+  //      String[] cmds = new String[1];
+  //      cmds[0] = cmd;
+  //      app.saveStrings(APPPATH+WINDOWS_CMD, cmds);
+  //      delay(100);
+  //      file.open(APPPATH+WINDOWS_CMD);
+  //  }
+  //  else {
+  //    console.bugWarn("runOSCommand: support for os not implemented!");
+  //  }
+  //}
+
+
+  
+  // Now this thing basically just runs a windows command, not too complicated.
+  // If I'm lucky enough, I think this thing should work in linux too even though
+  // the cmd system is completely different, because we're essentially just calling
+  // some java executables.
+  public CmdOutput runExecutableCommand(String... cmd) {
+    try {
+      // Run the OS command
+      Process process = Runtime.getRuntime().exec(cmd);
+      
+      // Get the messages from the console (so that we can get stuff like error messages).
+      BufferedReader stdInput = new BufferedReader(new InputStreamReader(process.getInputStream()));
+      //BufferedReader stdOutput = new BufferedReader(new OutputStream(process.getOutputStream()));
+      BufferedReader stdError = new BufferedReader(new InputStreamReader(process.getErrorStream()));
+      
+      // This function should prolly run this in a different thread.
+      int exitCode = process.waitFor();
+      
+      // s will be used to read the stdout lines.
+      String s = null;
+      
+      // Where we'll actually store our stdoutput
+      String stdoutput = "";
+      
+      if (exitCode == 1) {
+        while ((s = stdInput.readLine()) != null) {
+            stdoutput += s+"\n";
+        }
+        //while ((s = stdOutput.readLine()) != null) {
+        //    stdoutput += s+"\n";
+        //}
+        // Truth be told, i should prolly have seperate stdout and stderr
+        // but I don't really mind combining it into one message.
+        while ((s = stdError.readLine()) != null) {
+            stdoutput += s+"\n";
+        }
+        
+        //System.out.println(stdoutput);
+      }
+      
+      //System.out.println("Exit code: "+exitCode);
+      // Done!
+      return new CmdOutput(exitCode, stdoutput);
+    }
+    // No need to do additional error checking here because I highly doubt we will get this kind
+    // of error unless we intentionally realllllllly mess up some files here.
+    catch (Exception e) {
+      console.warn("OS command exception: "+ e.getClass().getSimpleName());
+      console.warn(e.getMessage());
+      // 666 eeeeeevil number.
+      return new CmdOutput(666, e.getClass().getSimpleName());
+    }
+  }
+  
+  private PImage pdftopngnocache(String path) {
+    if (!file.exists(APPPATH+PDFTOPNG_PATH)) {
+      console.warn("pdftopng missing!");
+      return display.errorImg;
+    }
+    
+    String cachepath = generateCachePath("");
+    CmdOutput cmdout = runExecutableCommand(APPPATH+PDFTOPNG_PATH, "-f", "1", "-l", "1", "-r", "48", path, cachepath);
+    if (!cmdout.success) {
+      console.warn("pdftopng error: "+cmdout.exitCode+" "+cmdout.message);
+    }
+    
+    // Out command executable includes the ".png" file path name automatically
+    return loadImage(cachepath+"-000001.png");
+  }
+  
+  // converts png, stores in cache folder, returns cached entry
+  // if already exists, and if not, returns png after caching.
+  public PImage pdftopng(String path) {
+    PImage img = tryLoadImageCache(path, new Runnable() {
+      // Here, we gotta generate cache.
+      // Pretty easy in hindsight.
+      public void run() {
+        PImage im2 = pdftopngnocache(path);
+        setOriginalImage(im2);
+      }
+    });
+    return img;
+  }
+  
+  
+  
 
   private int updatePhase = 0;
   // 0 - Not updating at all.
@@ -5381,7 +5730,7 @@ public class TWEngine {
             //Process p = Runtime.getRuntime().exec(newVersion);
             String cmd = "start \""+APP_NAME+"\" /d \""+file.getDir(newVersion).replaceAll("/", "\\\\")+"\" \""+file.getFilename(newVersion)+"\"";
             console.log(cmd);
-            runOSCommand(cmd);
+            runExecutableCommand(cmd);
             delay(500);
             exit();
           }
@@ -5452,7 +5801,7 @@ public class TWEngine {
       console.bugWarn("restart(): Not implemented for MacOS");
       return;
     }
-    runOSCommand(cmd);
+    runExecutableCommand(cmd);
     delay(500);
     exit();
   }
@@ -5630,6 +5979,15 @@ public class TWEngine {
       power.allowMinimizedMode = !power.allowMinimizedMode;
       console.log("Minimized mode "+(power.allowMinimizedMode ? "enabled" : "disabled"));
     }
+    //else if (commandEquals(command, "/testrelative")) {
+    //  String fro = "C:/mydata/notebook/hazy_era/homen/006";
+    //  String to = "C:/mydata/notebook/hazy_era/homen/007";
+    //  String relative = file.getRelativeDir("C:/mydata/notebook/cold_summer/homen/006", to);
+      
+    //  console.log(fro + ", " + to);
+    //  console.log(relative);
+    //  console.log(file.relativeToAbsolute(fro, relative));
+    //}
     
     // No commands
     else if (command.length() <= 1) {
@@ -6524,6 +6882,7 @@ public class TWEngine {
   
 
   public void scaleDown(PImage image, int scale) {
+    if (image == null) return;
     console.info("scaleDown: "+str(image.width)+","+str(image.height)+",scale"+str(scale));
     if ((image.width > scale || image.height > scale)) {
       // If the image is vertical, resize to 0x512
@@ -6623,10 +6982,14 @@ public class TWEngine {
   }
 
   public String generateCachePath(String ext) {
+    String extt = "";
+    if (ext.length() > 0) {
+      extt = "."+ext;
+    }
     // Get a unique idenfifier for the file
-    String cachePath = CACHE_PATH+"cache-"+str(int(random(0, 2147483646)))+"."+ext;
+    String cachePath = CACHE_PATH+"cache-"+str(int(random(0, 2147483646)))+extt;
     while (file.exists(cachePath)) {
-      cachePath = CACHE_PATH+"cache-"+str(int(random(0, 2147483646)))+"."+ext;
+      cachePath = CACHE_PATH+"cache-"+str(int(random(0, 2147483646)))+extt;
     }
     return cachePath;
   }
@@ -6721,8 +7084,8 @@ public class TWEngine {
   public class InputModule {
     
     // Mouse & keyboard
-    public boolean primaryClick = false;
-    public boolean secondaryClick = false;
+    public boolean primaryOnce = false;
+    public boolean secondaryOnce = false;
     public boolean primaryDown = false;
     public boolean secondaryDown = false;
     public boolean primaryReleased = false;
@@ -6817,8 +7180,8 @@ public class TWEngine {
       // If the mouse begins click on the frame, this will be later updated to true.
       // Then next frame this will be set to false, and because of the one-click code,
       // this will not be updated at all hence remaining false.
-      primaryClick = false;
-      secondaryClick = false;
+      primaryOnce = false;
+      secondaryOnce = false;
       primaryReleased = false;
       secondaryReleased = false;
       keyOnce = false;
@@ -6838,9 +7201,9 @@ public class TWEngine {
           normalClickTimeout = 15.;
         eventClick = false;
         
-        primaryClick = (app.mouseButton != RIGHT);
+        primaryOnce = (app.mouseButton != RIGHT);
         
-        secondaryClick = (app.mouseButton == RIGHT);
+        secondaryOnce = (app.mouseButton == RIGHT);
         
         mouseMoved = false;
         clickStartX = mouseX();
@@ -7108,9 +7471,9 @@ public class TWEngine {
       
       // Special keys/buttons
       if (int(k) == settings.LEFT_CLICK)
-        return this.primaryClick;
+        return this.primaryOnce;
       else if (int(k) == settings.RIGHT_CLICK)
-        return this.secondaryClick;
+        return this.secondaryOnce;
       else 
         // Otherwise just tell us if the key is down or not
         return keyDown(k);
@@ -7128,9 +7491,9 @@ public class TWEngine {
       
       // Special keys/buttons
       if (int(k) == settings.LEFT_CLICK)
-        return this.primaryClick;
+        return this.primaryOnce;
       else if (int(k) == settings.RIGHT_CLICK)
-        return this.secondaryClick;
+        return this.secondaryOnce;
       else {
         // Otherwise just tell us if the key is down or not
         return keyDownOnce(k);
@@ -7213,8 +7576,8 @@ public class TWEngine {
       for (int i = 0; i < 1024; i++) {
         keys[i] = 0;
       }
-      primaryClick = false;
-      secondaryClick = false;
+      primaryOnce = false;
+      secondaryOnce = false;
       primaryDown = false;
       secondaryDown = false;
       click = false;
@@ -7425,7 +7788,6 @@ public class TWEngine {
 
     power.updatePowerMode();
 
-    sound.processSound();
     processCaching();
 
     if ((int)app.frameCount % 2000 == 0) {
@@ -7446,6 +7808,8 @@ public class TWEngine {
 
     // Show the current GUI.
     display.displayScreens();
+    
+    sound.processSound();
     
     ui.displayMiniMenu();
     
@@ -7513,6 +7877,8 @@ public class TWEngine {
     
     stats.recordTime("total_time_in_timeway");
     stats.increase("total_frames_timeway", 1);
+    
+    display.forceDelta(-1f);
   }
   
 }
@@ -7822,6 +8188,10 @@ public final class SpriteSystemPlaceholder {
           return ((engine.mouseY()-mouseOffsetY)/mouseScaleY);
         }
         
+        private boolean mouseDown() {
+          return engine.input.primaryDown && !engine.ui.miniMenuShown();
+        }
+        
         public void setDelta(float del) {
           customDelta = true;
           myDelta = del;
@@ -7837,7 +8207,7 @@ public final class SpriteSystemPlaceholder {
         public SpriteSystemPlaceholder(TWEngine engine, String path) {
             this.engine = engine;
             spriteNames = new HashMap<String, Integer>();
-            selectedSprites = new Stack<Sprite>(8192);
+            selectedSprites = new Stack<Sprite>(32768);
             sprites = new ArrayList<Sprite>();
             spritesStack = new Stack<Sprite>(128);
             unusedSprite = new Sprite("UNUSED");
@@ -7863,18 +8233,18 @@ public final class SpriteSystemPlaceholder {
             
             public void update() {
                 draggingEnd = false;
-                if (!engine.input.primaryDown && dragging) {
+                if (!mouseDown() && dragging) {
                 dragging = false;
                 draggingEnd = true;
                 }
                 if (clickDelay > 0) {
                 clickDelay--;
                 }
-                if (!click && engine.input.primaryDown) {
+                if (!click && mouseDown()) {
                 click = true;
                 clickDelay = 1;
                 }
-                if (click && !engine.input.primaryDown) {
+                if (click && !mouseDown()) {
                 click = false;
                 }
             }
@@ -7884,7 +8254,7 @@ public final class SpriteSystemPlaceholder {
             }
             
             public void beginDrag() {
-                if (engine.input.primaryDown && clickDelay > 0) {
+                if (mouseDown() && clickDelay > 0) {
                 dragging = true;
                 }
             }
@@ -8399,16 +8769,17 @@ public final class SpriteSystemPlaceholder {
             }
 
             public void dragReposition() {
-                boolean dragging = mouseWithinSprite();
+                boolean dragging = mouseWithinHitbox();
+                
+                if (mode == VERTEX) {
+                  dragging = mouseWithinSprite();
+                }
                 
                 // Bug fix where small area is non-selectable.
                 if (allowResizing) {
                   dragging &= !mouseWithinSquare();
                 }
                 
-                if (mode == VERTEX) {
-                //dragging = mouseWithinSprite();
-                }
                 if (dragging && !repositionDrag.isDragging()) {
                 repositionDrag.beginDrag();
                 
@@ -8649,6 +9020,22 @@ public final class SpriteSystemPlaceholder {
                 return unusedSprite;
             }
         }
+        
+        public Sprite getSpriteVary(String name) {
+          try {
+            if (engine.display.phoneMode) {
+              return sprites.get(spriteNames.get(name+"-phone"));
+            }
+            else {
+              return sprites.get(spriteNames.get(name));
+            }
+          }
+          catch (NullPointerException e) {
+              //if (!suppressSpriteWarning)
+              //    console.bugWarn("Sprite "+name+" does not exist.");
+              return unusedSprite;
+          }
+        }
   
         // What a confusing method name lol
         // We don't want to load or save from json for sprites like
@@ -8760,8 +9147,19 @@ public final class SpriteSystemPlaceholder {
               case DOUBLE:
               engine.display.img(s.imgName, s.getX(), s.getY()+s.getHeight()*s.getBop(), s.getWidth(), s.getHeight()-int((float)s.getHeight()*s.getBop()));
               break;
-              case VERTEX:  // We don't need vertices in our program so let's just sweep this under the rug.
-              //draw.autoImgVertex(s);
+              case VERTEX:
+              //engine.console.log(
+              //s.vertex.v[0].x+","+ s.vertex.v[0].y+","+ 
+              //s.vertex.v[1].x+","+ s.vertex.v[1].y+","+
+              //s.vertex.v[2].x+","+ s.vertex.v[2].y+","+ 
+              //s.vertex.v[3].x+","+ s.vertex.v[3].y);
+              
+              engine.display.img(s.imgName, 
+              s.vertex.v[0].x, s.vertex.v[0].y, 
+              s.vertex.v[1].x, s.vertex.v[1].y, 
+              s.vertex.v[2].x, s.vertex.v[2].y, 
+              s.vertex.v[3].x, s.vertex.v[3].y);
+              
               break;
               case ROTATE:
               //draw.autoImgRotate(s);
@@ -8839,7 +9237,7 @@ public final class SpriteSystemPlaceholder {
         // should be in the engine class anyways.
         public boolean buttonClicked(String identifier) {
             Sprite s = getSprite(identifier);
-            return (s.mouseWithinHitbox() && engine.input.primaryClick);
+            return (s.mouseWithinHitbox() && engine.input.primaryOnce);
         }
 
         public boolean buttonHover(String identifier) {
@@ -8988,7 +9386,7 @@ public final class SpriteSystemPlaceholder {
         //idk man. I'm not in the mood to name things today lol.
         public void keyboardInteractionEnabler() {
           if (engine.input.ctrlDown && engine.input.altDown && engine.input.shiftDown) {
-            if (engine.input.secondaryClick) {
+            if (engine.input.secondaryOnce) {
               if (!this.interactable) {
                 this.interactable = true;
                 engine.console.log("Sprite system interactability enabled.");
@@ -9130,6 +9528,7 @@ public enum PowerMode {
 public enum FileType {
   FILE_TYPE_UNKNOWN, 
     FILE_TYPE_IMAGE, 
+    FILE_TYPE_PDF,
     FILE_TYPE_VIDEO, 
     FILE_TYPE_MUSIC, 
     FILE_TYPE_MODEL, 

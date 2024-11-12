@@ -1,0 +1,17 @@
+{
+  "h": 64,
+  "vy0": 279,
+  "vx1": 793,
+  "vy2": 407,
+  "vx0": 665,
+  "vy1": 279,
+  "mode": "SINGLE",
+  "vx3": 665,
+  "vx2": 793,
+  "vy3": 407,
+  "w": 64,
+  "name": "config-syncmusictime-phone",
+  "x": 665,
+  "y": 279,
+  "locked": false
+}

@@ -5,6 +5,29 @@ public class Explorer extends Screen {
   
   //private String currentDir = DEFAULT_DIR;
   
+  private final String[] DEFAULT_CODE_NEON = {
+    "public void start() {",
+    "  ",
+    "}",
+    "",
+    "public void run() {",
+    "  g.background(120, 100, 140);",
+    "  sprite(\"neon\");",
+    "  ",
+    "}"
+  };
+  
+  private final String[] DEFAULT_CODE = {
+    "public void start() {",
+    "  ",
+    "}",
+    "",
+    "public void run() {",
+    "  g.background(120, 100, 140);",
+    "  sprite(\"neon\");",
+    "  ",
+    "}"
+  };
   
   //DisplayableFile backButtonDisplayable = null;
   SpriteSystemPlaceholder gui;
@@ -62,7 +85,7 @@ public class Explorer extends Screen {
             app.fill(100, 0, 255);
             app.tint(100, 0, 255);
             // if mouse is hovering over text and left click is pressed, go to this directory/open the file
-            if (input.primaryClick) {
+            if (input.primaryOnce) {
               if (file.currentFiles[i].isDirectory())
                 input.scrollOffset = 0.;
                 
@@ -96,6 +119,10 @@ public class Explorer extends Screen {
     
     ui.useSpriteSystem(gui);
     
+    // Buttons
+    // Return here to not render them
+    if (engine.inputPromptShown) return;
+    
     //************NEW FOLDER************
     if (ui.button("new_folder", "new_folder_128", "New folder")) {
       
@@ -111,10 +138,57 @@ public class Explorer extends Screen {
         }
       };
       
+      engine.beginInputPrompt("New project name:", r);
+    }
+    
+    
+    //************NEW SKETCHIO PROJECT************
+    if (ui.button("new_project", "new_entry_128", "New project")) {
+      
+      Runnable r = new Runnable() {
+        public void run() {
+          if (input.keyboardMessage.length() <= 1) {
+            console.log("Please enter a valid project name!");
+            return;
+          }
+          String name = file.currentDir+input.keyboardMessage;
+          createNewProject(name);
+          refreshDir();
+        }
+      };
+      
       engine.beginInputPrompt("Folder name:", r);
     }
     
     gui.updateSpriteSystem();
+  }
+  
+  public void createNewProject(String path) {
+    // .sketchio
+    try {
+      if (!path.substring(path.length()-9).equals(".sketchio")) {
+        path += ".sketchio";
+      }
+    }
+    catch (StringIndexOutOfBoundsException e) {
+      path += ".sketchio";
+    }
+    file.mkdir(path);
+    path += "/";
+    
+    file.mkdir(path+"img");
+    file.mkdir(path+"music");
+    file.mkdir(path+"scripts");
+    file.mkdir(path+"shaders");
+    file.mkdir(path+"sprites");
+    
+    if (file.exists(engine.APPPATH+"engine/other/neon.png")) {
+      file.copy(engine.APPPATH+"engine/other/neon.png", path+"img/neon.png");
+      app.saveStrings(path+"scripts/main.java", DEFAULT_CODE_NEON);
+    }
+    else {
+      app.saveStrings(path+"scripts/main.java", DEFAULT_CODE);
+    }
     
   }
   
