@@ -2,16 +2,6 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.filechooser.FileSystemView;
 
-// Size estimations for rendering:
-//400% 16mb
-//300% 9mb
-//200% 4mb
-//100% 1mb
-//50% 0.25mb
-//25% 0.0625mb
-//
-// Formula = width * height * 4 * scale * timeLength * framespersecond 
-//
 
 public class Sketchpad extends Screen {
   private String sketchiePath = "";
@@ -1059,7 +1049,7 @@ public class Sketchpad extends Screen {
       
       
       // Start rendering button
-      if (ui.button("render-ok", "tick_128", "Start rendering")) {
+      if (ui.buttonVary("render-ok", "tick_128", "Start rendering")) {
         sound.playSound("select_any");
         try {
           renderFramerate = Float.parseFloat(framerateField.value);
@@ -1079,6 +1069,31 @@ public class Sketchpad extends Screen {
         sound.playSound("select_smaller");
         input.keyboardMessage = code;
         renderMenu = false;
+      }
+      
+      // Render info
+      {
+        // Size estimations for rendering (per frame):
+        //400% 16mb
+        //300% 9mb
+        //200% 4mb
+        //100% 1mb
+        //50% 0.25mb
+        //25% 0.0625mb
+        //
+        // Formula = width * height * 4 * scale * timeLength * framespersecond 
+        //
+        try {
+          float framerate = Float.parseFloat(framerateField.value);
+          long requiredSize = (long)(canvas.width*upscalePixels)*(long)(canvas.height*upscalePixels)*4L*(long)( (timeLength/display.BASE_FRAMERATE) *framerate);
+          int sizemb = int(requiredSize/(1024L*1024L));
+          float sizegb = float(sizemb)/1024f;
+          String renderInfo = "This render requires "+nf(sizegb, 0, 1)+"GB of free disk space.";
+          textSprite("render-menu-info1", renderInfo, 20f);
+        }
+        catch (NumberFormatException e) {
+          
+        }
       }
     }
   }
@@ -1126,29 +1141,23 @@ public class Sketchpad extends Screen {
     }
   }
   
-  public boolean textSprite(String name, String val) {
+  public boolean textSprite(String name, String val, float textSize) {
     String disp = gui.interactable ? "white" : "nothing";
     boolean clicked = ui.buttonVary(name, disp, "");
     
     float x = gui.getSpriteVary(name).getX();
     float y = gui.getSpriteVary(name).getY();
+    float wi = gui.getSpriteVary(name).getWidth();
+    float hi = gui.getSpriteVary(name).getHeight();
     
     app.textAlign(LEFT, TOP);
-    app.textSize(32);
-    app.text(val, x, y);
+    app.textSize(textSize);
+    app.text(val, x, y, wi, hi);
     return clicked;
   }
   
-  private Runnable setSpriteMode(int mode) {
-    Runnable r = new Runnable() {
-      public void run() {
-        if (sprites.selectedSprite != null) {
-          sprites.selectedSprite.mode = mode;
-        }
-      }
-    };
-    
-    return r;
+  public boolean textSprite(String name, String val) {
+    return textSprite(name, val, 32);
   }
   
   private Runnable resetSpriteSize(int scale) {
@@ -1279,6 +1288,8 @@ public class Sketchpad extends Screen {
     renderFrameCount = 0;
     power.allowMinimizedMode = false;
     play();
+    // Pause music so that it's not playing during rendering.
+    sound.pauseMusic();
     
     // Give a little bit of time so the UI can disappear for better user feedback.
     timeBeforeStartingRender = 5;
@@ -1492,6 +1503,15 @@ public class Sketchpad extends Screen {
     }
   }
   
+  private void cancelRendering() {
+    sound.playSound("select_smaller");
+    pause();
+    rendering = false;
+    converting = false;
+    power.allowMinimizedMode = true;
+    console.log("Rendering cancelled.");
+  }
+  
   
   public void upperBar() {
     display.shader("fabric", "color", 0.43,0.4,0.42,1., "intensity", 0.1);
@@ -1505,12 +1525,8 @@ public class Sketchpad extends Screen {
       if (!converting) {
         ui.loadingIcon(WIDTH*0.75, HEIGHT/2);
         textSprite("renderinginfoscreen-txt1", "Rendering sketch...\nStage 1/2");
-        if (ui.button("renderinginfoscreen-cancel", "cross_128", "Stop rendering")) {
-          sound.playSound("select_smaller");
-          pause();
-          rendering = false;
-          power.allowMinimizedMode = true;
-          console.log("Rendering cancelled.");
+        if (ui.buttonVary("renderinginfoscreen-cancel", "cross_128", "Stop rendering")) {
+          cancelRendering();
         }
       }
       else {
@@ -1525,6 +1541,11 @@ public class Sketchpad extends Screen {
         //}
         
         // TODO: progress bar?
+        
+        if (ui.buttonVary("renderinginfoscreen-cancel", "cross_128", "Stop rendering")) {
+          cancelRendering();
+          cancelConversion();
+        }
       }
     }
     
@@ -1696,7 +1717,7 @@ public class Sketchpad extends Screen {
   /////////////////////////////////////////////////
   // FFMPEG STUFF
   // (mostly stolen from MovieMaker source code lol
-  
+  private SwingWorker<Throwable, Object> ffmpegWorker = null;
   
   // Literally copy+pasted straight from processing code.
   void createMovie(String path, String soundFilePath, String imgFolderPath, final int wi, final int hi, final double fps, final String formatName) {
@@ -1720,7 +1741,7 @@ public class Sketchpad extends Screen {
     // ---------------------------------
     // Create the QuickTime movie
     // ---------------------------------
-    new SwingWorker<Throwable, Object>() {
+    ffmpegWorker = new SwingWorker<Throwable, Object>() {
   
       @Override
       protected Throwable doInBackground() {
@@ -1762,9 +1783,18 @@ public class Sketchpad extends Screen {
         Throwable t;
         try {
           t = get();
-        } catch (Exception ex) {
-          t = ex;
+        } catch (InterruptedException ignored1) {
+          t = null;
+          return;
+        } catch (java.util.concurrent.CancellationException ignored2) {
+          t = null;
+          return;
         }
+        catch (Exception ex) {
+          t = ex;
+          console.log(t.getClass().getName());
+        }
+        
         if (t != null) {
           // Create error log
           String log = "FFMPEG FAILED TO RENDER\nMessage: "+t.getMessage()+"\n\n";
@@ -1792,14 +1822,22 @@ public class Sketchpad extends Screen {
           
           // Show the file in file explorer
           file.open(engine.APPPATH+"output/");
+          sound.playSound("render_finish_ding");
         }
         
         rendering = false;
         converting = false;
         power.allowMinimizedMode = true;
       }
-    }.execute();
+    };
+    
+    ffmpegWorker.execute();
+  }
   
+  private void cancelConversion() {
+    if (ffmpegWorker != null) {
+      ffmpegWorker.cancel(true);
+    }
   }
   
   

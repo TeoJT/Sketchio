@@ -1,0 +1,17 @@
+{
+  "h": 52,
+  "vy0": 379,
+  "vx1": 133,
+  "vy2": 443,
+  "vx0": 69,
+  "vy1": 379,
+  "mode": "DOUBLE",
+  "vx3": 69,
+  "vx2": 133,
+  "vy3": 443,
+  "w": 529,
+  "name": "render-framerate-phone",
+  "x": 69,
+  "y": 379,
+  "locked": false
+}

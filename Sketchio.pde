@@ -163,6 +163,7 @@ void keyPressed() {
 
     // Begin the timer. This will automatically increment once it's != 0.
     timewayEngine.input.keyHoldCounter = 1;
+    
     //timewayEngine.console.log(char(key)+" "+int(key));
   }
 }
@@ -173,6 +174,7 @@ void keyReleased() {
   if (timewayEngine != null && timewayEngine.input != null) {
     timewayEngine.input.keyHoldCounter = 0;
     timewayEngine.input.releaseKeyboardAction(key, keyCode);
+    //timewayEngine.console.log(char(key)+" "+int(key)+" "+char(keyCode)+" "+int(keyCode));
   }
   
 }

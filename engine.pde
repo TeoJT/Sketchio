@@ -7415,7 +7415,11 @@ public class TWEngine {
         enterDown = false;
       }
       // Down keys
-      int val = int(Character.toLowerCase(kkey));
+      char actualKey = kkey;
+      if (shiftDown) {
+        actualKey = char(kkeyCode);
+      }
+      int val = int(Character.toLowerCase(actualKey));
       
       if (val >= 1024) return;
       
@@ -7634,7 +7638,11 @@ public class TWEngine {
       }
       
       // And actually set the current pressed key state
-      int val = int(Character.toLowerCase(kkeyCode));
+      char actualKey = kkey;
+      if (shiftDown) {
+        actualKey = char(kkeyCode);
+      }
+      int val = int(Character.toLowerCase(actualKey));
       
       if (val >= 1024) return;
       if (keys[val] > 0) return;
