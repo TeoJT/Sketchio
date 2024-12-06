@@ -1,0 +1,17 @@
+{
+  "h": 128,
+  "vy0": 405,
+  "vx1": 436,
+  "vy2": 533,
+  "vx0": 308,
+  "vy1": 405,
+  "mode": "SINGLE",
+  "vx3": 308,
+  "vx2": 436,
+  "vy3": 533,
+  "w": 128,
+  "name": "automation-lerp-phone",
+  "x": 308,
+  "y": 405,
+  "locked": false
+}

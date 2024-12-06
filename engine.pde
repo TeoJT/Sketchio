@@ -2357,6 +2357,7 @@ public class TWEngine {
     public boolean buttonImg(String img, float x, float y, float w, float h) {
       display.img(img, x, y, w, h);
       
+      if (miniMenuShown()) return false;
       return (input.mouseX() > x && input.mouseX() < x+w && input.mouseY() > y && input.mouseY() < y+h && input.primaryOnce);
     }
     
@@ -2424,6 +2425,8 @@ public class TWEngine {
       // Don't have "the boy who called wolf", situation, turn back on warnings
       // for genuine troubleshooting.
       currentSpritePlaceholderSystem.suppressSpriteWarning = false;
+      
+      if (ui.miniMenuShown()) return false;
   
       // Only when the button is actually clicked.
       return hover && input.primaryOnce;

@@ -17,6 +17,7 @@ public class Sketchpad extends Screen {
     float RIGHT_X = 0f;
     
     public String name  = "Automation bar";
+    protected color mycolor = color(255, 198, 75);
     
     public AutomationBar(String name) {
       this.name = name;
@@ -43,6 +44,19 @@ public class Sketchpad extends Screen {
       app.textSize(LABEL_HEIGHT-10f);
       app.text(name, 5, y+5);
       app.text(nf(getFloatVal(time), 0, 3), RIGHT_X*0.4f, y+5);
+      
+      boolean colorpickerClicked = ui.buttonImg("nothing", RIGHT_X*0.5f, y, LABEL_HEIGHT, LABEL_HEIGHT);
+      app.fill(mycolor);
+      app.noStroke();
+      app.rect(RIGHT_X*0.5f+2f, y+2f, LABEL_HEIGHT-4f, LABEL_HEIGHT-4f);
+      if (colorpickerClicked) {
+        Runnable r = new Runnable() {
+          public void run() {
+            mycolor = ui.getPickedColor();
+          }
+        };
+        ui.colorPicker(RIGHT_X*0.5f+LABEL_HEIGHT, y+LABEL_HEIGHT, r);
+      }
       
       boolean crossClicked = ui.buttonImg("cross", RIGHT_X-LABEL_HEIGHT-5f, y, LABEL_HEIGHT, LABEL_HEIGHT);
       if (crossClicked) {
@@ -107,7 +121,7 @@ public class Sketchpad extends Screen {
     }
     
     protected void renderData() {
-      app.stroke(255, 200, 40);
+      app.stroke(mycolor);
       app.strokeWeight(2f);
       app.noFill();
       
@@ -275,7 +289,7 @@ public class Sketchpad extends Screen {
           hoverLineIndex = -1;
         }
         else {
-          app.stroke(255, 200, 40);
+          app.stroke(mycolor);
         }
         
         Point point = points.get(i);
@@ -300,16 +314,16 @@ public class Sketchpad extends Screen {
             pointIndexForDeletion = i;
           }
         }
-        else if (lineRect(actualX, actualY, prevActualX, prevActualY, lineSelectorX, lineSelectorY, RECTWIHI, RECTWIHI)) {
+        else if (lineRect(actualX, actualY, prevActualX, prevActualY, lineSelectorX, lineSelectorY, RECTWIHI, RECTWIHI) && !playing) {
           hoverLineIndex = i;
-          app.fill(255, 200, 40);
+          app.fill(mycolor);
           
           if (input.secondaryOnce) {
             createPointAtIndex = i;
           }
         }
         else {
-          app.fill(255, 200, 40);
+          app.fill(mycolor);
         }
         
         if (draggingIndex == i) {
@@ -428,7 +442,7 @@ public class Sketchpad extends Screen {
   public LerpAutomationBar testTimeSet1;
   public LerpAutomationBar testTimeSet2;
   
-  private ArrayList<AutomationBar> automationBars = new ArrayList<AutomationBar>();
+  private HashMap<String, AutomationBar> automationBars = new HashMap<String, AutomationBar>();
   private final int MAX_DISPLAY_AUTOMATION_BARS = 4;
   private ArrayList<AutomationBar> displayAutomationBars = new ArrayList<AutomationBar>();
   
@@ -1498,7 +1512,7 @@ public class Sketchpad extends Screen {
             }
             
             LerpAutomationBar bar = new LerpAutomationBar(input.keyboardMessage);
-            automationBars.add(bar);
+            automationBars.put(input.keyboardMessage, bar);
             addAutomationBarToDisplay(bar);
           }
         };
@@ -2001,7 +2015,7 @@ public class Sketchpad extends Screen {
         Runnable[] actions = new Runnable[l+1];
         
         int i = 0;
-        for (AutomationBar bar : automationBars) {
+        for (AutomationBar bar : automationBars.values()) {
           labels[i] = bar.name;
           actions[i] = new Runnable() {public void run() {
             addAutomationBarToDisplay(bar);
