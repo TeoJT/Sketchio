@@ -1,0 +1,17 @@
+{
+  "h": 73,
+  "vy0": 2,
+  "vx1": 672,
+  "vy2": 130,
+  "vx0": 544,
+  "vy1": 2,
+  "mode": "SINGLE",
+  "vx3": 544,
+  "vx2": 672,
+  "vy3": 130,
+  "w": 73,
+  "name": "automation_button",
+  "x": 544,
+  "y": 2,
+  "locked": false
+}

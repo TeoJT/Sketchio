@@ -16,8 +16,10 @@ public class Sketchpad extends Screen {
     float LEFT_X = 0f;
     float RIGHT_X = 0f;
     
-    public AutomationBar() {
-      
+    public String name  = "Automation bar";
+    
+    public AutomationBar(String name) {
+      this.name = name;
     }
     
     public boolean display(int index) {
@@ -39,8 +41,15 @@ public class Sketchpad extends Screen {
       app.fill(255);
       app.textAlign(LEFT, TOP);
       app.textSize(LABEL_HEIGHT-10f);
-      app.text("TimeSet name", 5, y+5);
+      app.text(name, 5, y+5);
       app.text(nf(getFloatVal(time), 0, 3), RIGHT_X*0.4f, y+5);
+      
+      boolean crossClicked = ui.buttonImg("cross", RIGHT_X-LABEL_HEIGHT-5f, y, LABEL_HEIGHT, LABEL_HEIGHT);
+      if (crossClicked) {
+        sound.playSound("select_smaller");
+        displayAutomationBars.remove(this);
+      }
+      
       display.clip(0f, y+LABEL_HEIGHT, RIGHT_X, MY_HEIGHT);
       app.noStroke();
       //app.fill(0, 127);
@@ -132,8 +141,8 @@ public class Sketchpad extends Screen {
     
     ArrayList<Point> points = new ArrayList<Point>();
     
-    public LerpAutomationBar() {
-      super();
+    public LerpAutomationBar(String name) {
+      super(name);
       points.add(new Point(0f*60f, 0.0f));
       points.add(new Point(2f*60f, 0.5f));
       points.add(new Point(3f*60f, 0.1f));
@@ -372,6 +381,7 @@ public class Sketchpad extends Screen {
   private boolean configMenu = false;
   private boolean renderMenu = false;
   private boolean errorMenu  = false;
+  private boolean automationBarSelectMenu = false;
   private String errorLog = "";
   private float errorHeight = 0f;
   private int canvasSmooth = 1;
@@ -384,7 +394,7 @@ public class Sketchpad extends Screen {
   private PGraphics scaleCanvas;
   private int renderFrameCount = 0;
   private float renderFramerate = 0.;
-  private float musicVolume = 0.5;
+  //private float musicVolume = 0.5;
   private String[] musicFiles = new String[0];
   private String[] loadedShaders = new String[0];
   private String selectedMusic = "";
@@ -415,6 +425,13 @@ public class Sketchpad extends Screen {
   final static int CODE_PANE = 2;
   final static int TIMELINE_PANE = 3;
   
+  public LerpAutomationBar testTimeSet1;
+  public LerpAutomationBar testTimeSet2;
+  
+  private ArrayList<AutomationBar> automationBars = new ArrayList<AutomationBar>();
+  private final int MAX_DISPLAY_AUTOMATION_BARS = 4;
+  private ArrayList<AutomationBar> displayAutomationBars = new ArrayList<AutomationBar>();
+  
   
   private String[] defaultCode = {
     "public void start() {",
@@ -427,8 +444,6 @@ public class Sketchpad extends Screen {
     "}"
   };
   
-  public LerpAutomationBar testTimeSet1;
-  public LerpAutomationBar testTimeSet2;
 
   public Sketchpad(TWEngine engine, String path) {
     this(engine);
@@ -466,8 +481,8 @@ public class Sketchpad extends Screen {
   }
   
   {
-    testTimeSet1 = new LerpAutomationBar();
-    testTimeSet2 = new LerpAutomationBar();
+    testTimeSet1 = new LerpAutomationBar("Test1");
+    testTimeSet2 = new LerpAutomationBar("Test2");
   }
   
   //{
@@ -816,10 +831,19 @@ public class Sketchpad extends Screen {
     return (successful.get() && !compiling.get() && !loading.get());
   }
   
+  private void addAutomationBarToDisplay(AutomationBar bar) {
+    if (!displayAutomationBars.contains(bar)) {
+      displayAutomationBars.add(bar);
+      if (displayAutomationBars.size() > MAX_DISPLAY_AUTOMATION_BARS) {
+        displayAutomationBars.remove(0);
+      }
+    }
+  }
+  
   ////////////////////////////
   
   private boolean menuShown() {
-    return configMenu || renderMenu || rendering;
+    return configMenu || renderMenu || rendering || automationBarSelectMenu;
   }
   
   private void resetView() {
@@ -912,7 +936,7 @@ public class Sketchpad extends Screen {
       resetView();
     }
     
-    boolean menuShown = configMenu || renderMenu;
+    boolean menuShown = menuShown();
     if ((lastSelectedPane == CANVAS_PANE || !codeEditorShown()) && input.keyActionOnce("playPause") && !menuShown) {
        togglePlay();
        input.backspace();   // Don't want the unintended space.
@@ -1447,6 +1471,42 @@ public class Sketchpad extends Screen {
         }
       }
     }
+    else if (automationBarSelectMenu) {
+      
+      // Background
+      gui.spriteVary("automation-back-1", "black");
+      
+      // Title
+      textSprite("automation-menu-title", "Select automation type:");
+      
+      // Close menu button
+      if (ui.buttonVary("automation-cross-1", "cross", "")) {
+        sound.playSound("select_smaller");
+        automationBarSelectMenu = false;
+      }
+      
+      // Close menu button
+      if (ui.buttonVary("automation-lerp", "cube_128", "Linear")) {
+        sound.playSound("select_any");
+        automationBarSelectMenu = false;
+        
+        Runnable r = new Runnable() {
+          public void run() {
+            if (input.keyboardMessage.length() < 1) {
+              console.log("Please enter a valid name!");
+              return;
+            }
+            
+            LerpAutomationBar bar = new LerpAutomationBar(input.keyboardMessage);
+            automationBars.add(bar);
+            addAutomationBarToDisplay(bar);
+          }
+        };
+        
+        engine.beginInputPrompt("Enter name:", r);
+      }
+      
+    }
   }
   
   /////////////////////////////////////////////////
@@ -1824,8 +1884,12 @@ public class Sketchpad extends Screen {
       // Woops, gotta get the boolean value a frame late, who cares.
       
       // Display timesets and stuff
-      mouseInAutomationBarPane = testTimeSet1.display(0);
-      mouseInAutomationBarPane |= testTimeSet2.display(1);
+      //mouseInAutomationBarPane = testTimeSet1.display(0);
+      //mouseInAutomationBarPane |= testTimeSet2.display(1);
+      mouseInAutomationBarPane = false;
+      for (int i = 0; i < displayAutomationBars.size(); i++) {
+        mouseInAutomationBarPane |= displayAutomationBars.get(i).display(i);
+      }
       
       if (codeEditorShown()) {
         displayCodeEditor();
@@ -1860,6 +1924,8 @@ public class Sketchpad extends Screen {
       app.textAlign(CENTER, TOP);
       app.text("Loading...", WIDTH/4, HEIGHT/2+128);
     }
+    
+    ((IOEngine)engine).displaySketchioInput();
   }
   
   private void cancelRendering() {
@@ -1927,6 +1993,28 @@ public class Sketchpad extends Screen {
         sound.playSound("select_any");
         codeEditorShown = !codeEditorShown;
         saveConfig();
+      }
+      
+      if (ui.button("automation_button", "cube_128", "Automation")) {
+        int l = automationBars.size();
+        String[] labels = new String[l+1];
+        Runnable[] actions = new Runnable[l+1];
+        
+        int i = 0;
+        for (AutomationBar bar : automationBars) {
+          labels[i] = bar.name;
+          actions[i] = new Runnable() {public void run() {
+            addAutomationBarToDisplay(bar);
+          }};
+          i++;
+        }
+        
+        labels[l] = "[Create automation bar]";
+        actions[l] = new Runnable() {public void run() {
+            automationBarSelectMenu = true;
+        }};
+        
+        ui.createOptionsMenu(labels, actions);
       }
       
       if (ui.button("settings_button", "doc_128", "Sketch config")) {

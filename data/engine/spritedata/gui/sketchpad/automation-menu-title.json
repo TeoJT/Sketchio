@@ -1,0 +1,17 @@
+{
+  "h": 64,
+  "vy0": 251,
+  "vx1": 602,
+  "vy2": 315,
+  "vx0": 538,
+  "vy1": 251,
+  "mode": "DOUBLE",
+  "vx3": 538,
+  "vx2": 602,
+  "vy3": 315,
+  "w": 512,
+  "name": "automation-menu-title",
+  "x": 538,
+  "y": 251,
+  "locked": false
+}
