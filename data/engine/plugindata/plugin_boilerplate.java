@@ -249,6 +249,10 @@ public class CustomPlugin {
   public void toClipboard(String text) {
     call(27, text);
   }
+  
+  public float getAutoFloatTest() {
+    return getFloat(28);
+  }
 
 
 

@@ -147,6 +147,10 @@ public class Sketchpad extends Screen {
       return getFloatVal(ttime, false);
     }
     
+    public float getVal() {
+      return getFloatVal(time, false);
+    }
+    
     // How to find the index with an arbritrary float value?
     // Do it the lazy way cus I can't be bothered with a big algorithm.
     // Select an approximate point and then backtrace until we find a point between our float val.
@@ -317,11 +321,17 @@ public class Sketchpad extends Screen {
         points.remove(pointIndexForDeletion);
         pointIndexForDeletion = -1;
       }
-      
-      if (createPointAtIndex != -1) {
-        points.add(createPointAtIndex, new Point(time, 0.5f));
+      else if (createPointAtIndex != -1) {
+        float TOTAL_WIDTH = timeLength*5f;
+        float tt = time/timeLength;
+        float offX = (RIGHT_X/2f)-tt*TOTAL_WIDTH;
+        
+        float actualX = input.mouseX();
+        float val = (actualX-offX)/TOTAL_WIDTH;
+        
+        points.add(createPointAtIndex, new Point(val*timeLength, min(max(1f-(input.mouseY()-TOP_Y)/MY_HEIGHT, 0f), 1f)));
+        createPointAtIndex = -1;
       }
-      
       
       // For performance testing
       //getFloatVal(time, true);
@@ -417,7 +427,8 @@ public class Sketchpad extends Screen {
     "}"
   };
   
-  private LerpAutomationBar testTimeSet;
+  public LerpAutomationBar testTimeSet1;
+  public LerpAutomationBar testTimeSet2;
 
   public Sketchpad(TWEngine engine, String path) {
     this(engine);
@@ -455,7 +466,8 @@ public class Sketchpad extends Screen {
   }
   
   {
-    testTimeSet = new LerpAutomationBar();
+    testTimeSet1 = new LerpAutomationBar();
+    testTimeSet2 = new LerpAutomationBar();
   }
   
   //{
@@ -1812,7 +1824,8 @@ public class Sketchpad extends Screen {
       // Woops, gotta get the boolean value a frame late, who cares.
       
       // Display timesets and stuff
-      mouseInAutomationBarPane = testTimeSet.display(0);
+      mouseInAutomationBarPane = testTimeSet1.display(0);
+      mouseInAutomationBarPane |= testTimeSet2.display(1);
       
       if (codeEditorShown()) {
         displayCodeEditor();

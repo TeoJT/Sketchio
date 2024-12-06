@@ -217,6 +217,15 @@ public Object runTWIT(int opcode, Object[] args) {
           break;
         }
         
+        // getAutoFloatTest()
+        case 28: {
+          if (timewayEngine.currScreen instanceof Sketchpad) {
+            Sketchpad sk = (Sketchpad)timewayEngine.currScreen;
+            
+            return sk.testTimeSet1.getVal();
+          }
+        }
+        
         
         
         
