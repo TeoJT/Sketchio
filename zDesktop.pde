@@ -77,11 +77,10 @@ protected PSurface initSurface() {
         catch (Exception e) {
           sketch_openErrorLog(
               "Maximise error. This is a bug."
-              );
+          );
         }
       }
     }
-    s.setTitle(TWEngine.APP_NAME);
     s.setResizable(true);
     return s;
 }
@@ -189,7 +188,7 @@ public void openErrorLog() {
 }
 
 public void minimalErrorDialog(String mssg) {
-  JOptionPane.showMessageDialog(null,mssg,TWEngine.APP_NAME,1);
+  JOptionPane.showMessageDialog(null,mssg,"Timeway" ,1);
 }
 
 public void requestAndroidPermissions() {

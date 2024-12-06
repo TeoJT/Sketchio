@@ -15,7 +15,7 @@ public class Startup extends Screen {
         //sound.playSound("intro");
         
         // if stats.json is missing, this means user is starting timeway for the first time.
-        firstTimeStartup = !file.exists(engine.APPPATH+engine.STATS_FILE);
+        firstTimeStartup = !file.exists(engine.APPPATH+engine.STATS_FILE());
     }
 
     public void upperBar() {
@@ -89,9 +89,9 @@ public class Startup extends Screen {
         app.textAlign(CENTER, CENTER);
         app.textFont(engine.DEFAULT_FONT, 34);
         app.fill(0, 255-(255*floatIn));
-        app.text("by "+TWEngine.AUTHOR, WIDTH/2-3, HEIGHT/2+150-3);
+        app.text("by Teo Taylor", WIDTH/2-3, HEIGHT/2+150-3);
         app.fill(255, 255-(255*floatIn));
-        app.text("by "+TWEngine.AUTHOR, WIDTH/2, HEIGHT/2+150);
+        app.text("by Teo Taylor", WIDTH/2, HEIGHT/2+150);
         
         
         // First time startup
@@ -107,8 +107,8 @@ public class Startup extends Screen {
         app.textAlign(LEFT, CENTER);
         app.textFont(engine.DEFAULT_FONT, 30);
         app.fill(0, 255-(255*floatIn));
-        app.text(TWEngine.VERSION, 10-3, HEIGHT-30-3);
+        app.text(engine.getVersion(), 10-3, HEIGHT-30-3);
         app.fill(255, 255-(255*floatIn));
-        app.text(TWEngine.VERSION, 10, HEIGHT-30);
+        app.text(engine.getVersion(), 10, HEIGHT-30);
     }
 }

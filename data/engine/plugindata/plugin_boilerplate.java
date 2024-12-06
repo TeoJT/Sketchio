@@ -7,9 +7,16 @@ public class CustomPlugin {
 
   public PApplet app;
   public PGraphics g;
+  
+  public final String P2D = PApplet.P2D;
+  public final String P3D = PApplet.P3D;
   public final float PI = PApplet.PI;
   public final float HALF_PI = PApplet.HALF_PI;
   public final float TWO_PI = PApplet.TWO_PI;
+
+  public final int QUADS = PApplet.QUADS;
+  public final int QUAD = PApplet.QUAD;
+  public final int POINT = PApplet.POINT;
 
   private String getString(int op, Object... argss) {
     apiOpCode = op;
@@ -36,6 +43,16 @@ public class CustomPlugin {
     }
     apiCall.run();
     return (int)ret;
+  }
+  
+  
+  private boolean getBool(int op, Object... argss) {
+    apiOpCode = op;
+    for (int i = 0; i < argss.length; i++) {
+      args[i] = argss[i];
+    }
+    apiCall.run();
+    return (boolean)ret;
   }
 
   private void call(int op, Object... argss) {
@@ -220,6 +237,23 @@ public class CustomPlugin {
     }
     apiCall.run();
   }
+  
+  public boolean keyDown(char c) {
+    return getBool(25, c);
+  }
+
+  public boolean keyOnce(char c) {
+    return getBool(26, c);
+  }
+
+  public void toClipboard(String text) {
+    call(27, text);
+  }
+
+
+
+  
+
 
 
 // We need a start() and run() method here which is

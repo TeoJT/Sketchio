@@ -40,19 +40,26 @@ import java.util.Iterator;   // Used by the stack class at the bottom
 import java.util.Arrays;   // Used by the stack class at the bottom
 
 
+
+
 // Timeway's engine code.
 // TODO: add documentation lmao.
-
 public class TWEngine {
   //*****************CONSTANTS SETTINGS**************************
   // Info and versioning
-  public static final String APP_NAME        = "Sketchio";
-  public static final String AUTHOR      = "Teo Taylor";
-  public static final String VERSION     = "0";
+  private static final String VERSION     = "0.1.4";
   public static final String VERSION_DESCRIPTION = 
-    "- Added previews to entries in pixel realm\n"+
-    "- Performance improvements\n"+
-    "- Timeway now runs on Android!\n";
+    "- Recycle bin added\n"+
+    "- Performance improvements\n";
+  
+  public String getAppName() {
+    return "Timeway";
+  }
+  
+  public String getVersion() {
+    return VERSION;
+  }
+    
   // ***************************
   // How versioning works:
   // a.b.c
@@ -62,18 +69,6 @@ public class TWEngine {
   // a, b, and c can go well over 10, 100, it can be any positive integer.
 
   // Paths
-  public final String CONSOLE_FONT        = "engine/font/SourceCodePro-Regular.ttf";
-  public final String IMG_PATH            = "engine/img/";
-  public final String FONT_PATH           = "engine/font/";
-  public final String DEFAULT_FONT_PATH   = "engine/font/Typewriter.vlw";
-  public final String SHADER_PATH         = "engine/shaders/";
-  public final String SOUND_PATH          = "engine/sounds/";
-  public final String CONFIG_PATH         = "config.json";
-  public final String KEYBIND_PATH        = "keybindings.json";
-  public final String STATS_FILE          = "stats.json";
-  public final String PATH_SPRITES_ATTRIB = "engine/spritedata/";
-  public final String CACHE_INFO          = "cache_info.json";
-  public       String CACHE_PATH          = "cache/";
   public final String WINDOWS_CMD         = "engine/shell/mywindowscommand.bat";
   public final String POCKET_PATH         = "pocket/";
   public final String TEMPLATES_PATH      = "engine/realmtemplates/";
@@ -82,6 +77,36 @@ public class TWEngine {
   public       String DEFAULT_UPDATE_PATH = "";  // Set up by setup()
   public final String BOILERPLATE_PATH    = "engine/plugindata/plugin_boilerplate.java";
   public final String PDFTOPNG_PATH       = "engine/bin/windows/pdftopng.exe";
+  
+  public String CONSOLE_FONT() {
+    return "engine/font/SourceCodePro-Regular.ttf";
+  }
+  public String IMG_PATH() {
+    return "engine/img/";
+  }
+  public String FONT_PATH() {
+    return "engine/font/";
+  }
+  public String DEFAULT_FONT_PATH() {
+    return "engine/font/Typewriter.vlw";
+  }
+  public String SHADER_PATH() {
+    return "engine/shaders/";
+  }
+  public String SOUND_PATH() { return "engine/sounds/"; }
+  public String CONFIG_PATH() { return "config.json"; }
+  public String KEYBIND_PATH() { return "keybindings.json"; }
+  public String STATS_FILE() { return "stats.json"; }
+  public String PATH_SPRITES_ATTRIB() { return "engine/spritedata/"; }
+  public String CACHE_INFO() { return "cache_info.json"; }
+  
+  public String[] FORCE_CACHE_MUSIC() {
+    String[] forceCacheMusic = {
+      "engine/music/pixelrealm_default_bgm.wav",
+      "engine/music/pixelrealm_default_bgm_legacy.wav",
+    };
+    return forceCacheMusic;
+  }
 
   // Static constants
   public static final float   KEY_HOLD_TIME       = 30.; // 30 frames
@@ -107,6 +132,7 @@ public class TWEngine {
   // Core stuff
   public PApplet app;
   public String APPPATH = sketchPath().replace('\\', '/')+"/data/";
+  public String CACHE_PATH = "cache/";
   
   // Modules
   public Console console;
@@ -247,14 +273,14 @@ public class TWEngine {
         loadDefaultSettings();
         if (!isAndroid()) {
           // Normal you expect it.
-          settings = loadConfig(APPPATH+CONFIG_PATH, defaultSettings);
-          keybindings = loadConfig(APPPATH+KEYBIND_PATH, defaultKeybindings);
+          settings = loadConfig(APPPATH+CONFIG_PATH(), defaultSettings);
+          keybindings = loadConfig(APPPATH+KEYBIND_PATH(), defaultKeybindings);
         }
         else {
           // However, in android, we're not allowed to write to the usual place.
           // Android gives you a specific variable dir to write to, so we must use that instead.
-          settings = loadConfig(getAndroidWriteableDir()+CONFIG_PATH, defaultSettings);
-          keybindings = loadConfig(getAndroidWriteableDir()+KEYBIND_PATH, defaultKeybindings);
+          settings = loadConfig(getAndroidWriteableDir()+CONFIG_PATH(), defaultSettings);
+          keybindings = loadConfig(getAndroidWriteableDir()+KEYBIND_PATH(), defaultKeybindings);
         }
       }
       
@@ -485,7 +511,7 @@ public class TWEngine {
     private boolean forcePowerModeEnabled = false;
     private PowerMode forcedPowerMode = PowerMode.HIGH;
     private PowerMode powerModeBefore = PowerMode.NORMAL;
-    public boolean allowMinimizedMode = false;
+    public boolean allowMinimizedMode = true;
   
     // The score that seperates the stable fps from the unstable fps.
     // If you've got half a brain, it would make the most sense to keep it at 0.
@@ -1209,6 +1235,20 @@ public class TWEngine {
       return displayScale;
     }
     
+    public void clip(float x, float y, float wi, float hi) {
+      currentPG.imageMode(CORNER);
+      if (currentPG == g) {
+        app.clip(x*displayScale, y*displayScale, wi*displayScale, hi*displayScale);
+      }
+      else {
+        currentPG.clip(x, y, wi, hi);
+      }
+    }
+    
+    public void noClip() {
+      currentPG.noClip();
+    }
+    
     // Since loading essential content only really takes place at the beginning,
     // we can free some memory by clearing the temp info in loadedcontent.
     // Just make sure not to load all content again!
@@ -1845,11 +1885,6 @@ public class TWEngine {
       display.recordLogicTime();
     }
     
-    public void clip(float x, float y, float wi, float hi) {
-      float s = getScale();
-      app.clip(x*s, y*s, wi*s, hi*s);
-    }
-    
     public void update() {
       // Reset so that a new texture can be uploaded to gpu
       uploadGPUOnce = true;
@@ -2319,6 +2354,12 @@ public class TWEngine {
       this.guiFade = 255.;
     }
     
+    public boolean buttonImg(String img, float x, float y, float w, float h) {
+      display.img(img, x, y, w, h);
+      
+      return (input.mouseX() > x && input.mouseX() < x+w && input.mouseY() > y && input.mouseY() < y+h && input.primaryOnce);
+    }
+    
     public boolean buttonHoverVary(String name) {
       if (display.phoneMode) {
         name += "-phone";
@@ -2480,9 +2521,7 @@ public class TWEngine {
     
     public final String MUSIC_CACHE_FILE = "music_cache.json";
     public final int MAX_MUSIC_CACHE_SIZE_KB = 1024*256;  // 256 MB
-    public final String[] FORCE_CACHE_MUSIC = {
-      "engine/music/default.wav"
-    };
+    
     // For when porting to other platforms which don't support gstreamer (*ahem* android *ahem*) 
     public boolean DISABLE_GSTREAMER = false;
     
@@ -3157,7 +3196,7 @@ public class TWEngine {
           
           // We're not done yet!
           // Step 3 load force-cached music
-          for (String filename : FORCE_CACHE_MUSIC) {
+          for (String filename : FORCE_CACHE_MUSIC()) {
             if (!(new File(filename).isAbsolute())) {
               filename = (APPPATH+filename).replaceAll("//", "/");
             }
@@ -3457,6 +3496,7 @@ public class TWEngine {
       return beatspersecond*((float)beat)+stepsspersecond*((float)step);
     }
     
+    @SuppressWarnings("unused")
     public boolean beatBetween(int start, int end) {
       return false;
     }
@@ -3525,6 +3565,14 @@ public class TWEngine {
       if (!customTime) {
         
       }
+    }
+    
+    public boolean musicIsPlaying() {
+      if (streamerMusic != null) {
+        // TODO: getting time is slow for some reason.
+        return streamerMusic.isPlaying();
+      }
+      return false;
     }
   
     public void processSound() {
@@ -3653,13 +3701,13 @@ public class TWEngine {
     
     public StatsModule() {
       if (isAndroid()) {
-        String path = file.directorify(getAndroidWriteableDir())+STATS_FILE;
+        String path = file.directorify(getAndroidWriteableDir())+STATS_FILE();
         if (file.exists(path))
           json = loadJSONObject(path);
         else json = new JSONObject();
       }
       else {
-        String path = APPPATH+STATS_FILE;
+        String path = APPPATH+STATS_FILE();
         if (file.exists(path))
           json = loadJSONObject(path);
         else json = new JSONObject();
@@ -3718,10 +3766,10 @@ public class TWEngine {
     public void save(boolean onlyIfExists) {
       String path = "";
       if (isAndroid()) {
-        path = file.directorify(getAndroidWriteableDir())+STATS_FILE;
+        path = file.directorify(getAndroidWriteableDir())+STATS_FILE();
       }
       else {
-        path = APPPATH+STATS_FILE;
+        path = APPPATH+STATS_FILE();
       }
       if (onlyIfExists && !file.exists(path)) return;
       saveJSONObject(json, path);
@@ -5226,13 +5274,13 @@ public class TWEngine {
     
     // First, load the essential stuff.
     
-    loadAsset(APPPATH+SOUND_PATH+"intro.wav");
-    loadAsset(APPPATH+IMG_PATH+"logo.png");
-    loadAllAssets(APPPATH+IMG_PATH+"loadingmorph/");
+    loadAsset(APPPATH+SOUND_PATH()+"intro.wav");
+    loadAsset(APPPATH+IMG_PATH()+"logo.png");
+    loadAllAssets(APPPATH+IMG_PATH()+"loadingmorph/");
     // We need to load shaders on the main thread.
-    loadAllAssets(APPPATH+SHADER_PATH);
+    loadAllAssets(APPPATH+SHADER_PATH());
     // Find out how many images there are in loadingmorph
-    File f = new File(APPPATH+IMG_PATH+"loadingmorph/");
+    File f = new File(APPPATH+IMG_PATH()+"loadingmorph/");
     
     // Idc
     if (isAndroid()) {
@@ -5241,7 +5289,7 @@ public class TWEngine {
     else {
       display.loadingFramesLength = f.listFiles().length;
     }
-    loadAsset(APPPATH+DEFAULT_FONT_PATH);
+    loadAsset(APPPATH+DEFAULT_FONT_PATH());
     
     stats.increase("started_up", 1);
     // Huh, "Timeaway" sounds strangely familiar, huh?
@@ -5636,7 +5684,7 @@ public class TWEngine {
       textFont(DEFAULT_FONT, 30);
       text("Downloading...", x1-wi+128, y1+10, wi*2-128, hi);
       textSize(20);
-      text("You can continue using "+APP_NAME+" while updating.", x1-wi+128, y1+50, wi*2-128, hi);
+      text("You can continue using "+getAppName()+" while updating.", x1-wi+128, y1+50, wi*2-128, hi);
       // Process bar
       fill(0, 127);
       rect(x1-wi+128+10, y1+hi-15, (float(downloadPercent)/100.)*((wi*2)-128-30), 3);
@@ -5696,7 +5744,7 @@ public class TWEngine {
       textFont(DEFAULT_FONT, 30);
       text("Extracting...", x1-wi+128, y1+10, wi*2-128, hi);
       textSize(20);
-      text(APP_NAME+" will restart in the new version shortly.", x1-wi+128, y1+50, wi*2-128, hi);
+      text(getAppName()+" will restart in the new version shortly.", x1-wi+128, y1+50, wi*2-128, hi);
       
       downloadPercent = completionPercent.get();
       // Process bar
@@ -5728,14 +5776,14 @@ public class TWEngine {
           if (f.exists()) {
             updatePhase = 0;
             //Process p = Runtime.getRuntime().exec(newVersion);
-            String cmd = "start \""+APP_NAME+"\" /d \""+file.getDir(newVersion).replaceAll("/", "\\\\")+"\" \""+file.getFilename(newVersion)+"\"";
+            String cmd = "start \""+getAppName()+"\" /d \""+file.getDir(newVersion).replaceAll("/", "\\\\")+"\" \""+file.getFilename(newVersion)+"\"";
             console.log(cmd);
             runExecutableCommand(cmd);
             delay(500);
             exit();
           }
           else {
-            console.warn("New version of "+APP_NAME+" could not be found, please close "+APP_NAME+" and open new version manually.");
+            console.warn("New version of "+getAppName()+" could not be found, please close "+getAppName()+" and open new version manually.");
             console.log("The new version should be somewhere in "+newVersion);
             updatePhase = 0;
           }
@@ -5775,7 +5823,7 @@ public class TWEngine {
   public String getExeFilename() {
     if (isWindows()) {
       // TODO: Smarter finding filename?
-      return APP_NAME+".exe";
+      return getAppName()+".exe";
     }
     else if (isLinux()) {
       console.bugWarn("getExeFilename(): Not implemented for Linux");
@@ -5791,7 +5839,7 @@ public class TWEngine {
     
     // TODO: make restart work while in Processing (dev mode)
     if (isWindows()) {
-      cmd = "start \""+APP_NAME+"\" /d \""+file.getMyDir().replaceAll("/", "\\\\")+"\" \""+getExeFilename()+"\"";
+      cmd = "start \""+getAppName()+"\" /d \""+file.getMyDir().replaceAll("/", "\\\\")+"\" \""+getExeFilename()+"\"";
     }
     else if (isLinux()) {
       console.bugWarn("restart(): Not implemented for Linux");
@@ -5860,6 +5908,13 @@ public class TWEngine {
     }
     return (input.substring(0, ind).equals(expected));
   }
+  
+  
+  public void toggleUnfocusedMusic() {
+    playWhileUnfocused = !playWhileUnfocused;
+    if (playWhileUnfocused) console.log("Background music (while focused) enabled.");
+    else console.log("Background music (while focused) disabled.");
+  }
 
 
   public void runCommand(String command) throws RuntimeException {
@@ -5926,13 +5981,11 @@ public class TWEngine {
       throw new RuntimeException("/throwexception command");
     }
     else if (commandEquals(command, "/restart")) {
-      console.log("Restarting "+APP_NAME+"...");
+      console.log("Restarting "+getAppName()+"...");
       restart();
     }
     else if (commandEquals(command, "/backgroundmusic") || commandEquals(command, "/backmusic")) {
-      playWhileUnfocused = !playWhileUnfocused;
-      if (playWhileUnfocused) console.log("Background music (while focused) enabled.");
-      else console.log("Background music (while focused) disabled.");
+      toggleUnfocusedMusic();
     }
     else if (commandEquals(command, "/enablebackgroundmusic") || commandEquals(command, "/enablebackmusic")) {
       playWhileUnfocused = true;
@@ -6155,10 +6208,10 @@ public class TWEngine {
 
   public void loadEverything() {
     // load everything else.
-    loadAllAssets(APPPATH+IMG_PATH);
-    loadAllAssets(APPPATH+FONT_PATH);
-    loadAllAssets(APPPATH+SHADER_PATH);
-    loadAllAssets(APPPATH+SOUND_PATH);
+    loadAllAssets(APPPATH+IMG_PATH());
+    loadAllAssets(APPPATH+FONT_PATH());
+    loadAllAssets(APPPATH+SHADER_PATH());
+    loadAllAssets(APPPATH+SOUND_PATH());
     
     // gstreamer takes time to start, cache the music so that we can use it while gstreamer starts up.
     sound.loadMusicCache();
@@ -6283,7 +6336,7 @@ public class TWEngine {
       
       boolean createFontFailed = false;
       try {
-        consoleFont = createFont(APPPATH+CONSOLE_FONT, 24);
+        consoleFont = createFont(APPPATH+CONSOLE_FONT(), 24);
       }
       catch (RuntimeException e) {
         createFontFailed = true;
@@ -6667,16 +6720,16 @@ public class TWEngine {
     // First, open the cache file if it's not been opened already.
     if (cacheInfoTimeout == 0) {
       // Should be true if the info file doesn't exist.
-      console.info("openCacheInfo: "+CACHE_PATH+CACHE_INFO);
-      if (!file.exists(CACHE_PATH+CACHE_INFO)) {
+      console.info("openCacheInfo: "+CACHE_PATH+CACHE_INFO());
+      if (!file.exists(CACHE_PATH+CACHE_INFO())) {
         createNewInfoFile = true;
       } else {
         try {
-          cacheInfoJSON = loadJSONObject(CACHE_PATH+CACHE_INFO);
+          cacheInfoJSON = loadJSONObject(CACHE_PATH+CACHE_INFO());
         }
         catch (RuntimeException e) {
-          console.warn("Cache file is curroupted. Cache will be erased and regenerated.");
-          createNewInfoFile = true;
+          console.warn("Cache info read failure.");
+          //createNewInfoFile = true;
           return;
         }
         // Make sure this cached file is compatible.
@@ -6698,7 +6751,7 @@ public class TWEngine {
       // Create the new json file.
       cacheInfoJSON = new JSONObject();
       cacheInfoJSON.setString("?cache_compatibility_version", CACHE_COMPATIBILITY_VERSION);
-      saveJSONObject(cacheInfoJSON, CACHE_PATH+CACHE_INFO);
+      saveJSONObject(cacheInfoJSON, CACHE_PATH+CACHE_INFO());
 
       cacheInfoTimeout = 0;
     }
@@ -6731,6 +6784,34 @@ public class TWEngine {
   }
   
   
+  public boolean cacheExists(String originalPath) {
+    return !tryGetCachePath(originalPath).equals(originalPath);
+  }
+  
+  
+  public String tryGetCachePath(String originalPath) {
+    openCacheInfo();
+
+    JSONObject cachedItem = cacheInfoJSON.getJSONObject(originalPath);
+
+    if (cachedItem != null) {
+      String actualPath = cachedItem.getString("actual", "");
+      
+
+        if (actualPath.length() > 0) {
+          String lastModified = "[null]";        // Test below automatically fails if there's no file found.
+          if (file.exists(originalPath)) lastModified = file.getLastModified(originalPath);
+      
+          if (cachedItem.getString("lastModified", "").equals(lastModified) || cachedItem.getString("lastModified", "").equals("")) {
+            return actualPath;
+          }
+        }
+    }
+    
+    return originalPath;
+  }
+  
+  
   // IMPORTANT NOTE: This function does NOT load in a seperate thread, so you should do that yourself
   // when using this!
   public SoundFile tryLoadSoundCache(String originalPath, Runnable readOriginalOperation) {
@@ -6750,33 +6831,32 @@ public class TWEngine {
       
 
         if (actualPath.length() > 0) {
-      File f = new File(originalPath);
-      String lastModified = "[null]";        // Test below automatically fails if there's no file found.
-      if (f.exists()) lastModified = file.getLastModified(originalPath);
+          String lastModified = "[null]";        // Test below automatically fails if there's no file found.
+          if (file.exists(originalPath)) lastModified = file.getLastModified(originalPath);
       
-        // Check if the sound has been modified at all since last time before we load the original.
-        if (cachedItem.getString("lastModified", "").equals(lastModified)) {
-          console.info("tryLoadSoundCache: No modifications");
-          
-          // No checksum tests because checksums are kinda useless anyways!
-          
-          // All checks passed so we can load the cache.
-          console.info("tryLoadSoundCache: loading cached sound");
-          try {
-            // Do NOT let this stay in RAM once we're done with it! (the false argument in this constructor)
-            SoundFile loadedSound = new SoundFile(app, actualPath, false);
-            return loadedSound;
+          // Check if the sound has been modified at all since last time before we load the original.
+          if (cachedItem.getString("lastModified", "").equals(lastModified)) {
+            console.info("tryLoadSoundCache: No modifications");
+            
+            // No checksum tests because checksums are kinda useless anyways!
+            
+            // All checks passed so we can load the cache.
+            console.info("tryLoadSoundCache: loading cached sound");
+            try {
+              // Do NOT let this stay in RAM once we're done with it! (the false argument in this constructor)
+              SoundFile loadedSound = new SoundFile(app, actualPath, false);
+              return loadedSound;
+            }
+            catch (RuntimeException e) {
+              console.info("tryLoadSoundCache: welp, time to load the original!");
+              console.info("tryLoadSoundCache: something went wrong with loading cache (maybe it's corrupted)");
+            }
+            
+            
+            // After this point something happened to the original image (or cache in unusual circumstances)
+            // and must not be used.
+            // We continue to load original and recreate the cache.
           }
-          catch (RuntimeException e) {
-            console.info("tryLoadSoundCache: welp, time to load the original!");
-            console.info("tryLoadSoundCache: something went wrong with loading cache (maybe it's corrupted)");
-          }
-          
-          
-          // After this point something happened to the original image (or cache in unusual circumstances)
-          // and must not be used.
-          // We continue to load original and recreate the cache.
-        }
       }
       
       
@@ -6896,6 +6976,31 @@ public class TWEngine {
       // Eh just scale it horizontally by default.
       else image.resize(scale, 0);
     }
+  }
+  
+  
+  public String saveCacheEntry(String originalPath, int size) {
+    JSONObject properties = new JSONObject();
+    String cachePath = generateCachePath(file.getExt(originalPath));
+    
+    
+    properties.setString("actual", cachePath);
+    
+    if (file.exists(originalPath)) {
+      properties.setString("lastModified", file.getLastModified(originalPath));
+      properties.setInt("size", size);
+    }
+    else {
+      properties.setString("lastModified", "");
+      properties.setInt("size", size);
+    }
+
+    cacheInfoJSON.setJSONObject(originalPath, properties);
+    stats.increase("cache_files_created", 1);
+    
+    saveCacheInfoNow();
+    
+    return cachePath;
   }
   
 
@@ -7765,7 +7870,7 @@ public class TWEngine {
   public void saveCacheInfoNow() {
     if (cacheInfoJSON != null) {
       console.info("processCaching: saving cache info.");
-      saveJSONObject(cacheInfoJSON, CACHE_PATH+CACHE_INFO);
+      saveJSONObject(cacheInfoJSON, CACHE_PATH+CACHE_INFO());
       cacheInfoTimeout = 0;
       stats.increase("total_cache_info_saves", 1);
     }
@@ -8223,7 +8328,7 @@ public final class SpriteSystemPlaceholder {
             selectedSprite = null;
             app = engine.app;
             console = engine.console;
-            PATH_SPRITES_ATTRIB = engine.PATH_SPRITES_ATTRIB;
+            PATH_SPRITES_ATTRIB = engine.PATH_SPRITES_ATTRIB();
             APPPATH = engine.APPPATH;
             this.myPath = path;
         }

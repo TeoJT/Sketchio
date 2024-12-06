@@ -37,7 +37,7 @@ public class Explorer extends Screen {
         super(engine);
         
         file.openDirInNewThread(engine.DEFAULT_DIR);
-        gui = new SpriteSystemPlaceholder(engine, engine.APPPATH+engine.PATH_SPRITES_ATTRIB+"gui/explorer/");
+        gui = new SpriteSystemPlaceholder(engine, engine.APPPATH+engine.PATH_SPRITES_ATTRIB()+"gui/explorer/");
         gui.repositionSpritesToScale();
         gui.interactable = false;
         
@@ -51,7 +51,7 @@ public class Explorer extends Screen {
         super(engine);
         
         file.openDirInNewThread(dir);
-        gui = new SpriteSystemPlaceholder(engine, engine.APPPATH+engine.PATH_SPRITES_ATTRIB+"gui/explorer/");
+        gui = new SpriteSystemPlaceholder(engine, engine.APPPATH+engine.PATH_SPRITES_ATTRIB()+"gui/explorer/");
         gui.repositionSpritesToScale();
         gui.interactable = false;
         

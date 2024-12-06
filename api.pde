@@ -198,6 +198,25 @@ public Object runTWIT(int opcode, Object[] args) {
           break;
         }
         
+        // keyDown(key)
+        case 25: {
+          char c = (char)args[0];
+          return timewayEngine.input.keyDown(c);
+        }
+          
+        // keyOnce(key)
+        case 26: {
+          char c = (char)args[0];
+          return timewayEngine.input.keyDownOnce(c);
+        }
+          
+        // toClipboard(text)
+        case 27: {
+          String text = (String)args[0];
+          timewayEngine.clipboard.copyString(text);
+          break;
+        }
+        
         
         
         

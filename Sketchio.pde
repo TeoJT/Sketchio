@@ -26,7 +26,7 @@ import java.io.PrintWriter;
 
 
 
-TWEngine timewayEngine;
+IOEngine timewayEngine;
 boolean sketch_showCrashScreen = false;
 String sketch_ERR_LOG_PATH;
 
@@ -93,7 +93,7 @@ void sketch_openErrorLog(Exception e) {
   String sStackTrace = sw.toString();
   
   String errMsg = 
-  "Sorry! "+TWEngine.APP_NAME+" crashed :(\n"+
+  "Sorry! "+timewayEngine.getAppName()+" crashed :(\n"+
   "Please provide Teo Taylor with this error log, thanks <3\n\n\n"+
   e.getClass().toString()+"\nMessage: \""+
   e.getMessage()+"\"\nStack trace:\n"+
@@ -119,15 +119,17 @@ void setup() {
     println("ShowcrashScreen: ", sketch_showCrashScreen);
     sketch_ERR_LOG_PATH = sketchPath()+"/data/error_log.txt";
     
-    timewayEngine = new TWEngine(this);
+    timewayEngine = new IOEngine(this);
     timewayEngine.startScreen(new Startup(timewayEngine));
+    
+    surface.setTitle(timewayEngine.getAppName());
     
     requestAndroidPermissions();
 }
 
 void draw() {
   if (timewayEngine == null) {
-    timewayEngine = new TWEngine(this);
+    timewayEngine = new IOEngine(this);
   }
   else {
       // Show error message on crash
@@ -138,7 +140,7 @@ void draw() {
           timewayEngine.engine();
         }
         catch (java.lang.OutOfMemoryError outofmem) {
-          sketch_openErrorLog(TWEngine.APP_NAME+" has run out of memory.");
+          sketch_openErrorLog(timewayEngine.getAppName()+" has run out of memory.");
           exit();
         }
         catch (Exception e) {

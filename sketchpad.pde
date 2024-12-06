@@ -4,6 +4,340 @@ import javax.swing.filechooser.FileSystemView;
 
 
 public class Sketchpad extends Screen {
+  
+  class AutomationBar {
+    
+    final float MY_HEIGHT = 100f;
+    final float LABEL_HEIGHT = 28f;
+    final float SELECTION_BOX_WIDTH = 200f;
+      
+    float TOP_Y = 0f;
+    float BOTTOM_Y = 0f;
+    float LEFT_X = 0f;
+    float RIGHT_X = 0f;
+    
+    public AutomationBar() {
+      
+    }
+    
+    public boolean display(int index) {
+      index++;  // Needs to be at least 1.
+      
+      BOTTOM_Y = HEIGHT-myLowerBarWeight;
+      TOP_Y = BOTTOM_Y-(((float)index)*(MY_HEIGHT+LABEL_HEIGHT));
+      RIGHT_X = middle();
+      
+      float y = TOP_Y;
+      
+      boolean mouseInPane = (input.mouseX() > 0f && input.mouseX() < RIGHT_X-2 && input.mouseY() > y && input.mouseY() < y+MY_HEIGHT+LABEL_HEIGHT);
+      
+      app.stroke(200);
+      app.strokeWeight(2f);
+      app.fill(60);
+      app.rect(0f, y, RIGHT_X-2, MY_HEIGHT+LABEL_HEIGHT);
+      app.line(0f, y+LABEL_HEIGHT, RIGHT_X, y+LABEL_HEIGHT);
+      app.fill(255);
+      app.textAlign(LEFT, TOP);
+      app.textSize(LABEL_HEIGHT-10f);
+      app.text("TimeSet name", 5, y+5);
+      app.text(nf(getFloatVal(time), 0, 3), RIGHT_X*0.4f, y+5);
+      display.clip(0f, y+LABEL_HEIGHT, RIGHT_X, MY_HEIGHT);
+      app.noStroke();
+      //app.fill(0, 127);
+      //app.rect(5, 5, SELECTION_BOX_WIDTH, LABEL_HEIGHT-10f);
+      
+      prev_x = 0f;
+      TOP_Y += LABEL_HEIGHT;
+      
+      renderData();
+      
+      display.noClip();
+      
+      return mouseInPane;
+    }
+    
+    public float getFloatVal(float ttime) {
+      return engine.noise(ttime*0.1);
+    }
+    
+    private float prev_x = 0f;
+    protected float plotLine(float normalizedX, boolean showVal) {
+      float TOTAL_WIDTH = timeLength*5f;
+      float tt = time/timeLength;
+      float offX = (RIGHT_X/2f)-tt*TOTAL_WIDTH;
+      
+      float x = (normalizedX)*TOTAL_WIDTH;
+      
+      float posToTime_prev = (prev_x/TOTAL_WIDTH)*timeLength;
+      float posToTime = (x/TOTAL_WIDTH)*timeLength;
+      
+      float prev_y = TOP_Y+MY_HEIGHT*(1f-getFloatVal(posToTime_prev));
+      float y = TOP_Y+MY_HEIGHT*(1f-getFloatVal(posToTime));
+      
+      float actualPrevX = prev_x+offX;
+      float actualX = x+offX;
+      
+      prev_x = x;
+      
+      if ((actualPrevX > RIGHT_X && actualX > RIGHT_X) || (actualPrevX < 0f && actualX < 0f)) {
+        return actualX;
+      }
+      app.line(actualPrevX, prev_y, actualX, y);
+      
+      if (showVal) {
+        app.textSize(10);
+        app.textAlign(CENTER, TOP);
+        app.text(getFloatVal(posToTime_prev), x+offX, y-15f);
+      }
+      
+      return actualX;
+    }
+    
+    protected float plotLine(float normalizedX) {
+      return plotLine(normalizedX, false);
+    }
+    
+    protected void renderData() {
+      app.stroke(255, 200, 40);
+      app.strokeWeight(2f);
+      app.noFill();
+      
+      float MAX = 1000f;
+      for (float i = 0; i < MAX; i++) {
+        plotLine((i)/MAX);
+      }
+      app.stroke(255, 127);
+      app.line(RIGHT_X/2f, TOP_Y, RIGHT_X/2f, BOTTOM_Y);
+    }
+  }
+  
+  class LerpAutomationBar extends AutomationBar {
+    
+    class Point {
+      public Point(float t, float val) {
+        this.t = t;
+        this.val = val;
+      }
+      
+      float t = 0f;
+      float val = 0f;
+      
+      //public Point addPoint(float t, float val) {
+      //  Point newPoint = new Point(t, val);
+      //  next = newPoint;
+      //  return newPoint;
+      //}
+    }
+    
+    
+    ArrayList<Point> points = new ArrayList<Point>();
+    
+    public LerpAutomationBar() {
+      super();
+      points.add(new Point(0f*60f, 0.0f));
+      points.add(new Point(2f*60f, 0.5f));
+      points.add(new Point(3f*60f, 0.1f));
+      points.add(new Point(5f*60f, 0.24f));
+      points.add(new Point(7f*60f, 0.95f));
+      points.add(new Point(10f*60f, 0.2f));
+    }
+    
+    @Override
+    public float getFloatVal(float ttime) {
+      return getFloatVal(ttime, false);
+    }
+    
+    // How to find the index with an arbritrary float value?
+    // Do it the lazy way cus I can't be bothered with a big algorithm.
+    // Select an approximate point and then backtrace until we find a point between our float val.
+    public float getFloatVal(float ttime, boolean countiterations) {
+      // Calc approx
+      int l = points.size();
+      int index = min((int)((ttime/timeLength)*((float)l)), l-1);
+     
+      
+      try {
+        int count = 0;
+        while (index > 0 && points.get(index).t > ttime) {
+          count++;
+          index--;
+        }
+        while (index < l-3 && points.get(index+1).t < ttime) {
+          count++;
+          index++;
+        }
+        Point lowerPoint = points.get(index);
+        Point higherPoint = points.get(index+1);
+        
+        float timerange = higherPoint.t-lowerPoint.t;
+        float t = ttime-lowerPoint.t;
+        float percentage = t/timerange;
+        
+        if (countiterations) {
+          console.log(count);
+        }
+        
+        
+        return PApplet.lerp(lowerPoint.val, higherPoint.val, percentage);
+      }
+      catch (IndexOutOfBoundsException e) {
+        //console.warn("EXCEPTION");
+        return 0f;
+      }
+    }
+    
+    
+    
+    private boolean lineRect(float x1, float y1, float x2, float y2, float rx, float ry, float rw, float rh) {
+  
+      // check if the line has hit any of the rectangle's sides
+      // uses the Line/Line function below
+      boolean left =   lineLine(x1,y1,x2,y2, rx,ry,rx, ry+rh);
+      boolean right =  lineLine(x1,y1,x2,y2, rx+rw,ry, rx+rw,ry+rh);
+      boolean top =    lineLine(x1,y1,x2,y2, rx,ry, rx+rw,ry);
+      boolean bottom = lineLine(x1,y1,x2,y2, rx,ry+rh, rx+rw,ry+rh);
+    
+      // if ANY of the above are true, the line
+      // has hit the rectangle
+      if (left || right || top || bottom) {
+        return true;
+      }
+      return false;
+    }
+    
+    
+    // LINE/LINE
+    private boolean lineLine(float x1, float y1, float x2, float y2, float x3, float y3, float x4, float y4) {
+    
+      // calculate the direction of the lines
+      float uA = ((x4-x3)*(y1-y3) - (y4-y3)*(x1-x3)) / ((y4-y3)*(x2-x1) - (x4-x3)*(y2-y1));
+      float uB = ((x2-x1)*(y1-y3) - (y2-y1)*(x1-x3)) / ((y4-y3)*(x2-x1) - (x4-x3)*(y2-y1));
+    
+      // if uA and uB are between 0-1, lines are colliding
+      if (uA >= 0 && uA <= 1 && uB >= 0 && uB <= 1) {
+    
+        return true;
+      }
+      return false;
+    }
+    
+    
+    
+    // Can't be bothered commenting so long story short...
+    // - We move our mouse int to the point
+    // - Point glows indicating its clickable
+    // - We try moving the point
+    // - Point becomes deselected as our mouse is outside of the clicking bounds of the point cus we moved it too fast
+    // - We rage
+    // solution: good ol' keeping track of shiz.
+    private int draggingIndex = -1;
+    private int hoverLineIndex = -1;
+    
+    protected void renderData() {
+      app.strokeWeight(2f);
+      app.textSize(10);
+      app.textAlign(CENTER, TOP);
+      
+      final float RECTWIHI = 12f;
+      final float HALFWIHI = RECTWIHI/2f;
+      
+    
+      if (!input.primaryDown) {
+        draggingIndex = -1;
+      }
+      
+      float lineSelectorX = input.mouseX()-RECTWIHI;
+      float lineSelectorY = input.mouseY()-RECTWIHI;
+      
+      int pointIndexForDeletion = -1;
+      int createPointAtIndex = -1;
+      
+      int l = points.size();
+      float prevActualX = 0f, prevActualY = 0f;
+      for (int i = 0; i < l; i++) {
+        app.fill(255);
+        
+        if (hoverLineIndex == i) {
+          app.stroke(255);
+          hoverLineIndex = -1;
+        }
+        else {
+          app.stroke(255, 200, 40);
+        }
+        
+        Point point = points.get(i);
+        
+        float x = plotLine(point.t/timeLength, true);
+        
+        float actualX = x-HALFWIHI;
+        float actualY = TOP_Y+(1f-point.val)*MY_HEIGHT-HALFWIHI;
+        
+        //if (actualX > RIGHT_X+200f || actualX < 0f) {
+        //  continue;
+        //}
+        
+        if (input.mouseX() > actualX && input.mouseX() < actualX+RECTWIHI && input.mouseY() > actualY && input.mouseY() < actualY+RECTWIHI && !playing) {
+          app.fill(255);
+          hoverLineIndex = -1;
+          
+          if (input.primaryOnce) {
+            draggingIndex = i;
+          }
+          if (input.secondaryOnce) {
+            pointIndexForDeletion = i;
+          }
+        }
+        else if (lineRect(actualX, actualY, prevActualX, prevActualY, lineSelectorX, lineSelectorY, RECTWIHI, RECTWIHI)) {
+          hoverLineIndex = i;
+          app.fill(255, 200, 40);
+          
+          if (input.secondaryOnce) {
+            createPointAtIndex = i;
+          }
+        }
+        else {
+          app.fill(255, 200, 40);
+        }
+        
+        if (draggingIndex == i) {
+          app.fill(255);
+          // Update point to new position.
+          point.val = min(max(1f-(input.mouseY()-TOP_Y)/MY_HEIGHT, 0f), 1f);
+        }
+        
+        
+        app.noStroke();
+        app.rect(actualX, actualY, RECTWIHI, RECTWIHI);
+        
+        prevActualX = actualX;
+        prevActualY = actualY;
+      }
+      
+      if (pointIndexForDeletion != -1) {
+        points.remove(pointIndexForDeletion);
+        pointIndexForDeletion = -1;
+      }
+      
+      if (createPointAtIndex != -1) {
+        points.add(createPointAtIndex, new Point(time, 0.5f));
+      }
+      
+      
+      // For performance testing
+      //getFloatVal(time, true);
+      
+      
+      app.stroke(255, 127);
+      app.line(RIGHT_X/2f, TOP_Y, RIGHT_X/2f, BOTTOM_Y);
+      
+    }
+  }
+  
+  
+  
+  
+  
+  
   private String sketchiePath = "";
   private TWEngine.PluginModule.Plugin plugin;
   private FFmpegEngine ffmpeg;
@@ -83,6 +417,7 @@ public class Sketchpad extends Screen {
     "}"
   };
   
+  private LerpAutomationBar testTimeSet;
 
   public Sketchpad(TWEngine engine, String path) {
     this(engine);
@@ -94,7 +429,7 @@ public class Sketchpad extends Screen {
     super(engine);
     myUpperBarWeight = 100.;
     
-    gui = new SpriteSystemPlaceholder(engine, engine.APPPATH+engine.PATH_SPRITES_ATTRIB+"gui/sketchpad/");
+    gui = new SpriteSystemPlaceholder(engine, engine.APPPATH+engine.PATH_SPRITES_ATTRIB()+"gui/sketchpad/");
     gui.interactable = false;
     
     
@@ -117,6 +452,10 @@ public class Sketchpad extends Screen {
     lastSelectedPane = CODE_PANE;
     
     //sound.streamMusic(engine.APPPATH+"engine/music/test.mp3");
+  }
+  
+  {
+    testTimeSet = new LerpAutomationBar();
   }
   
   //{
@@ -555,7 +894,7 @@ public class Sketchpad extends Screen {
   
   private boolean inCanvasPane = false;
   
-  private void displayCanvas() {
+  private void displayCanvas(boolean allowMouseActivity) {
     if (input.altDown && input.shiftDown && input.keys[int('s')] == 2) {
       input.backspace();
       resetView();
@@ -570,7 +909,7 @@ public class Sketchpad extends Screen {
     // Difficulty: we have 2 scroll areas: canvas zoom, and code editor.
     // if mouse is in canvas pane
     boolean canvasPane = input.mouseX() < middle() && !menuShown();
-    if (canvasPane) {
+    if (canvasPane && allowMouseActivity) {
       if (!inCanvasPane) {
         inCanvasPane = true;
         // We need to switch to our scroll value for the zoom
@@ -588,7 +927,7 @@ public class Sketchpad extends Screen {
     canvasScale = (2500.+scroll)/1000.;
     
     
-    if (canvasPane && sprites.selectedSprite == null && input.mouseY() < HEIGHT-myLowerBarWeight && input.mouseY() > myUpperBarWeight) {
+    if (canvasPane && sprites.selectedSprite == null && input.mouseY() < HEIGHT-myLowerBarWeight && input.mouseY() > myUpperBarWeight && allowMouseActivity) {
       if (input.primaryOnce && !isDragging && selectedPane == 0) {
         beginDragX = input.mouseX();
         beginDragY = input.mouseY();
@@ -610,7 +949,7 @@ public class Sketchpad extends Screen {
     
     // Sprite selected, then we right-click it
     // Brings up the menu
-    if (sprites.selectedSprite != null && sprites.selectedSprite.mouseWithinSprite() && input.secondaryOnce && !ui.miniMenuShown()) {
+    if (sprites.selectedSprite != null && sprites.selectedSprite.mouseWithinSprite() && input.secondaryOnce && !ui.miniMenuShown() && allowMouseActivity) {
       showSpriteMenu();
     }
     
@@ -1425,6 +1764,8 @@ public class Sketchpad extends Screen {
     }
   }
   
+  boolean mouseInAutomationBarPane = false;
+  
   public void content() {
     power.setAwake();
     
@@ -1466,7 +1807,12 @@ public class Sketchpad extends Screen {
       
       // Run the actual sketchio file's code.
       runCanvas();
-      displayCanvas();
+      displayCanvas(!mouseInAutomationBarPane);
+      
+      // Woops, gotta get the boolean value a frame late, who cares.
+      
+      // Display timesets and stuff
+      mouseInAutomationBarPane = testTimeSet.display(0);
       
       if (codeEditorShown()) {
         displayCodeEditor();
@@ -1697,6 +2043,8 @@ public class Sketchpad extends Screen {
         }
       }
     }
+    
+    
   }
   
   

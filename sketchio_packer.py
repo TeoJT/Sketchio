@@ -290,6 +290,9 @@ if (os.path.isdir("sketchio_windows_"+version)):
     if (os.path.isfile(new_name_windows+"/data/keybindings.json")):
         os.remove(new_name_windows+"/data/keybindings.json")
         print("Removed keybindings.json.")
+    if (os.path.isfile(new_name_windows+"/data/ffmpeg_errlog.txt")):
+        os.remove(new_name_windows+"/data/ffmpeg_errlog.txt")
+        print("Removed ffmpeg_errlog.txt.")
     if (os.path.isfile(new_name_windows+"/data/config.json")):
         os.remove(new_name_windows+"/data/config.json")
         print("Removed config.json.")
