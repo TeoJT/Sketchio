@@ -18,9 +18,14 @@ public class Sketchpad extends Screen {
     
     public String name  = "Automation bar";
     protected color mycolor = color(255, 198, 75);
+    public boolean snapping = true;
     
     public AutomationBar(String name) {
       this.name = name;
+    }
+    
+    public AutomationBar() {
+      
     }
     
     public boolean display(int index) {
@@ -53,15 +58,29 @@ public class Sketchpad extends Screen {
         Runnable r = new Runnable() {
           public void run() {
             mycolor = ui.getPickedColor();
+            save();
           }
         };
         ui.colorPicker(RIGHT_X*0.5f+LABEL_HEIGHT, y+LABEL_HEIGHT, r);
+      }
+      
+      // Snapping button
+      if (snapping) app.tint(255);
+      else app.tint(127);
+      boolean snaptoClicked = ui.buttonImg("snapto_64", RIGHT_X*0.5f+LABEL_HEIGHT, y, LABEL_HEIGHT, LABEL_HEIGHT);
+      app.noTint();
+      if (snaptoClicked) {
+        snapping = !snapping;
+        if (snapping) sound.playSound("select_bigger");
+        else sound.playSound("select_smaller");
+        save();
       }
       
       boolean crossClicked = ui.buttonImg("cross", RIGHT_X-LABEL_HEIGHT-5f, y, LABEL_HEIGHT, LABEL_HEIGHT);
       if (crossClicked) {
         sound.playSound("select_smaller");
         displayAutomationBars.remove(this);
+        save();
       }
       
       display.clip(0f, y+LABEL_HEIGHT, RIGHT_X, MY_HEIGHT);
@@ -120,6 +139,21 @@ public class Sketchpad extends Screen {
       return plotLine(normalizedX, false);
     }
     
+    protected void save() {
+      
+    }
+    
+    protected float screenXToTime(float x) {
+      float TOTAL_WIDTH = timeLength*5f;
+      float tt = time/timeLength;
+      float offX = (RIGHT_X/2f)-tt*TOTAL_WIDTH;
+      float aactualX = input.mouseX();
+      float val = (aactualX-offX)/TOTAL_WIDTH;
+      float xx = val*timeLength;
+      
+      return xx;
+    }
+    
     protected void renderData() {
       app.stroke(mycolor);
       app.strokeWeight(2f);
@@ -155,14 +189,14 @@ public class Sketchpad extends Screen {
     
     ArrayList<Point> points = new ArrayList<Point>();
     
+    public LerpAutomationBar(JSONObject json) {
+      super();
+      load(json);
+    }
+    
     public LerpAutomationBar(String name) {
       super(name);
-      points.add(new Point(0f*60f, 0.0f));
-      points.add(new Point(2f*60f, 0.5f));
-      points.add(new Point(3f*60f, 0.1f));
-      points.add(new Point(5f*60f, 0.24f));
-      points.add(new Point(7f*60f, 0.95f));
-      points.add(new Point(10f*60f, 0.2f));
+      save();
     }
     
     @Override
@@ -249,6 +283,71 @@ public class Sketchpad extends Screen {
     }
     
     
+    AtomicBoolean saving = new AtomicBoolean(false);
+    
+    @Override
+    public void save() {
+      console.log("Save bar "+name);
+      if (saving.get()) {
+        // If already saving don't bother.
+        // Ideally we should put the thread into a waiting state
+        // until saving goes false but cant be bothered.
+        return;
+      }
+      
+      JSONArray jsonarr = new JSONArray();
+      JSONObject barjson = new JSONObject();
+      
+      for (int i = 0; i < points.size(); i++) {
+        Point p = points.get(i);
+        JSONObject jsonpoint = new JSONObject();
+        jsonpoint.setFloat("val", p.val);
+        jsonpoint.setFloat("t", p.t);
+        jsonarr.setJSONObject(i, jsonpoint);
+      }
+      
+      barjson.setString("name", name);
+      barjson.setString("type", "LerpAutomationBar");
+      barjson.setInt("color", mycolor);
+      barjson.setBoolean("snapping", snapping);
+      barjson.setBoolean("in_view", displayAutomationBars.contains(this));
+      barjson.setJSONArray("data", jsonarr);
+      
+      
+      Thread t = new Thread(new Runnable() {
+        public void run() {
+          // Ensure autobars path exists
+          file.mkdir(sketchiePath+"autobars/");
+          app.saveJSONObject(barjson, sketchiePath+"autobars/"+name+".json");
+          saving.set(false);
+        }
+      }
+      );
+      saving.set(true);
+      t.start();
+    }
+    
+    public void load(JSONObject json) {
+      this.name = json.getString("name");
+      this.mycolor = json.getInt("color", color(0,0,0));
+      this.snapping = json.getBoolean("snapping", false);
+      if (json.getBoolean("in_view", false)) {
+        displayAutomationBars.add(this);
+      }
+      JSONArray jsonarr = json.getJSONArray("data");
+      if (jsonarr == null) {
+        console.warn("Autobar "+name+" file is missing data array.");
+        return;
+      }
+      
+      int l = jsonarr.size();
+      for (int i = 0; i < l; i++) {
+        JSONObject obj = jsonarr.getJSONObject(i);
+        if (obj != null) {
+          points.add(new Point(obj.getFloat("t"), obj.getFloat("val")));
+        }
+      }
+    }
     
     // Can't be bothered commenting so long story short...
     // - We move our mouse int to the point
@@ -259,6 +358,8 @@ public class Sketchpad extends Screen {
     // solution: good ol' keeping track of shiz.
     private int draggingIndex = -1;
     private int hoverLineIndex = -1;
+    private boolean unsnapDragX = false;
+    private boolean unsnapDragY = false;
     
     protected void renderData() {
       app.strokeWeight(2f);
@@ -267,10 +368,19 @@ public class Sketchpad extends Screen {
       
       final float RECTWIHI = 12f;
       final float HALFWIHI = RECTWIHI/2f;
+      final float UNSNAP_THRESHOLD = 20f;
+      final float VAL_SNAP_THRESHOLD = 0.05f;
       
     
-      if (!input.primaryDown) {
+      if (!input.primaryDown && draggingIndex != -1) {
         draggingIndex = -1;
+        save();
+      }
+      
+      // Must have at least 2 points
+      if (points.size() == 0) {
+        points.add(new Point(0f, 0.5f));
+        points.add(new Point(timeLength, 0.5f));
       }
       
       float lineSelectorX = input.mouseX()-RECTWIHI;
@@ -283,6 +393,7 @@ public class Sketchpad extends Screen {
       float prevActualX = 0f, prevActualY = 0f;
       for (int i = 0; i < l; i++) {
         app.fill(255);
+        app.strokeWeight(2f);
         
         if (hoverLineIndex == i) {
           app.stroke(255);
@@ -309,6 +420,8 @@ public class Sketchpad extends Screen {
           
           if (input.primaryOnce) {
             draggingIndex = i;
+            unsnapDragX = false;
+            unsnapDragY = false;
           }
           if (input.secondaryOnce) {
             pointIndexForDeletion = i;
@@ -329,7 +442,70 @@ public class Sketchpad extends Screen {
         if (draggingIndex == i) {
           app.fill(255);
           // Update point to new position.
-          point.val = min(max(1f-(input.mouseY()-TOP_Y)/MY_HEIGHT, 0f), 1f);
+          
+          // Unsnapping mechanism so that we can adjust one axis without affecting the other.
+          // Both for x/y
+          // No unsnapping for Y
+          //if (!unsnapDragY) {
+          //  if (input.mouseY() > actualY + UNSNAP_THRESHOLD || input.mouseY() < actualY - UNSNAP_THRESHOLD) {
+          //    unsnapDragY = true;
+          //    point.val = min(max(1f-(input.mouseY()-TOP_Y)/MY_HEIGHT, 0f), 1f);
+          //  }
+          //}
+          //else {
+            float vv = min(max(1f-(input.mouseY()-TOP_Y)/MY_HEIGHT, 0f), 1f);
+            
+            point.val = vv;
+            if (snapping) {
+              // Point behind
+              app.strokeWeight(1f);
+              app.stroke(255, 127);
+              if (i-1 >= 0) {
+                float prevval = points.get(i-1).val;
+                if (vv < prevval+VAL_SNAP_THRESHOLD && vv > prevval-VAL_SNAP_THRESHOLD) {
+                  point.val = prevval;
+                  app.line(0, actualY+HALFWIHI, RIGHT_X, actualY+HALFWIHI);
+                }
+              }
+              
+              // Point behind
+              if (i+1 < points.size()) {
+                float nextval = points.get(i+1).val;
+                if (vv < nextval+VAL_SNAP_THRESHOLD && vv > nextval-VAL_SNAP_THRESHOLD) {
+                  point.val = nextval;
+                  app.line(0, actualY+HALFWIHI, RIGHT_X, actualY+HALFWIHI);
+                }
+              }
+            }
+          //}
+          
+          // X pos
+          // No dragging for start and end points of the entire line.
+          if (i != 0 && i != points.size()-1) {
+            if (!unsnapDragX) {
+              if (input.mouseX() > actualX + UNSNAP_THRESHOLD || input.mouseX() < actualX - UNSNAP_THRESHOLD) {
+                unsnapDragX = true;
+                
+                point.t = screenXToTime(input.mouseX());
+              }
+            }
+            else {
+                // Limit dragging x pos to next and prev point's position.
+                float MICRO_OFFSET = 0.025;
+                float minx = 0f;
+                float maxx = timeLength;
+                
+                if (i-1 >= 0) {
+                  minx = points.get(i-1).t+MICRO_OFFSET;
+                }
+                if (i+1 < points.size()) {
+                  maxx = points.get(i+1).t-MICRO_OFFSET;
+                }
+                
+                point.t = min(max(screenXToTime(input.mouseX()), minx), maxx);
+            }
+          }
+          
         }
         
         
@@ -340,20 +516,16 @@ public class Sketchpad extends Screen {
         prevActualY = actualY;
       }
       
-      if (pointIndexForDeletion != -1) {
+      // Do not allow deletion of index 0
+      if (pointIndexForDeletion > 0 && points.size() > 2) {
         points.remove(pointIndexForDeletion);
         pointIndexForDeletion = -1;
+        save();
       }
       else if (createPointAtIndex != -1) {
-        float TOTAL_WIDTH = timeLength*5f;
-        float tt = time/timeLength;
-        float offX = (RIGHT_X/2f)-tt*TOTAL_WIDTH;
-        
-        float actualX = input.mouseX();
-        float val = (actualX-offX)/TOTAL_WIDTH;
-        
-        points.add(createPointAtIndex, new Point(val*timeLength, min(max(1f-(input.mouseY()-TOP_Y)/MY_HEIGHT, 0f), 1f)));
+        points.add(createPointAtIndex, new Point(screenXToTime(input.mouseX()), min(max(1f-(input.mouseY()-TOP_Y)/MY_HEIGHT, 0f), 1f)));
         createPointAtIndex = -1;
+        save();
       }
       
       // For performance testing
@@ -438,6 +610,7 @@ public class Sketchpad extends Screen {
   final static int CANVAS_PANE = 1;
   final static int CODE_PANE = 2;
   final static int TIMELINE_PANE = 3;
+  final static int AUTOBAR_PANE = 4;
   
   public LerpAutomationBar testTimeSet1;
   public LerpAutomationBar testTimeSet2;
@@ -557,6 +730,8 @@ public class Sketchpad extends Screen {
   // to save the whole thing:
   // - sprite data is saved automatically by the sprite class
   // - images... well, I don't think they need to be saved.
+  // - config is saved when we click "confirm"
+  // - autobars are saved as they're modified
   private void saveScripts() {
     // Not gonna bother putting a TODO but you know that the script isn't going to stick to
     // a keyboard forever.
@@ -586,7 +761,7 @@ public class Sketchpad extends Screen {
   
   private void loadConfig() {
     if (file.exists(sketchiePath+"sketch_config.json")) {
-      configJSON = loadJSONObject(sketchiePath+"sketch_config.json");
+      configJSON = app.loadJSONObject(sketchiePath+"sketch_config.json");
       // Need to load the canvas from a seperate thread
       // But while we're here, now's a good time to set the music file.
       // and timelength cus why not.
@@ -597,6 +772,33 @@ public class Sketchpad extends Screen {
       sound.setBPM(bpm);
       loop = configJSON.getBoolean("loop", false);
       selectedShader = configJSON.getString("shader", "");
+    }
+  }
+  
+  private void loadAutobars() {
+    if (file.exists(sketchiePath+"autobars/")) {
+      File ff = new File(sketchiePath+"autobars/");
+      File[] files = ff.listFiles();
+      for (File f : files) {
+        try {
+          JSONObject json = app.loadJSONObject(f.getAbsolutePath());
+          if (json == null) {
+            console.warn("Failed to load autobar "+f.getAbsolutePath()+": null");
+            continue;
+          }
+          
+          String name = json.getString("name", "null");
+          String type = json.getString("type", "null");
+          
+          if (type.equals("LerpAutomationBar")) {
+            automationBars.put(name, new LerpAutomationBar(json));
+          }
+        }
+        catch (RuntimeException e) {
+          console.warn("Failed to load autobar "+f.getAbsolutePath()+": "+e.getMessage());
+        }
+      }
+      
     }
   }
   
@@ -775,6 +977,11 @@ public class Sketchpad extends Screen {
     // Load sketch config
     loadConfig();
     
+    //////////////////
+    // AUTOBARS
+    // Load the autobars
+    loadAutobars();
+    
     // Should be safe to check the update checker thread
     startFileUpdateThread();
   }
@@ -848,8 +1055,10 @@ public class Sketchpad extends Screen {
   private void addAutomationBarToDisplay(AutomationBar bar) {
     if (!displayAutomationBars.contains(bar)) {
       displayAutomationBars.add(bar);
+      bar.save();
       if (displayAutomationBars.size() > MAX_DISPLAY_AUTOMATION_BARS) {
-        displayAutomationBars.remove(0);
+        AutomationBar b = displayAutomationBars.remove(0);
+        b.save();
       }
     }
   }
@@ -1903,6 +2112,12 @@ public class Sketchpad extends Screen {
       mouseInAutomationBarPane = false;
       for (int i = 0; i < displayAutomationBars.size(); i++) {
         mouseInAutomationBarPane |= displayAutomationBars.get(i).display(i);
+      }
+      
+      if (mouseInAutomationBarPane) {
+        if (input.primaryOnce) {
+          selectedPane = AUTOBAR_PANE;
+        }
       }
       
       if (codeEditorShown()) {
