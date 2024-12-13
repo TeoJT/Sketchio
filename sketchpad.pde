@@ -200,14 +200,23 @@ public class Sketchpad extends Screen {
       return actualX;
     }
     
+    
+    protected float closestBeatSnap = -1f;
+    protected float BEATSNAP_THRESHOLD = 10f;
     protected void renderBeats() {
       
       app.stroke(30, 180);
       app.strokeWeight(2f);
+      closestBeatSnap = -1f;
       
       int l = (int)(timeLength/sound.framesPerBeat())+1;
       for (int i = 0; i < l; i++) {
         float x = normalizedXToScreenX((sound.framesPerBeat()*float(i))/timeLength);
+        
+        if (input.mouseX() > x-BEATSNAP_THRESHOLD && input.mouseX() < x+BEATSNAP_THRESHOLD) {
+          closestBeatSnap = screenXToTime(x);
+        }
+        
         app.line(x, TOP_Y, x, BOTTOM_Y);
       }
     }
@@ -564,6 +573,9 @@ public class Sketchpad extends Screen {
                 }
                 
                 point.t = min(max(screenXToTime(input.mouseX()), minx), maxx);
+                if (snapping && beatsVisible && closestBeatSnap > 0f) {
+                  point.t = closestBeatSnap;
+                }
             }
           }
           
@@ -2184,8 +2196,12 @@ public class Sketchpad extends Screen {
       if (!menuShown()) {
         float y = 0f;
         for (int i = 0; i < displayAutomationBars.size(); i++) {
+          // Why not just y += displayAutomationBars.get(i).getHeight();?
+          // Because displayAutomationBars.get(i).display may remove bar from displayAutomationBars,
+          // causing an indexoutofbounds afterwards.
+          float hh = displayAutomationBars.get(i).getHeight();
           mouseInAutomationBarPane |= displayAutomationBars.get(i).display(y);
-          y += displayAutomationBars.get(i).getHeight();
+          y += hh;
         }
       }
       
