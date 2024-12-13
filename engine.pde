@@ -3517,6 +3517,12 @@ public class TWEngine {
       else return 0f;
     }
     
+    public float framesPerBeat() {
+      float beatspersecond = 60f/bpm;
+      float framesPerBeat = (display.BASE_FRAMERATE*beatspersecond);
+      return framesPerBeat;
+    }
+    
     public float beatSaw(int beatoffset, int everyxbeat) {
       return beatSaw(beatoffset, 0, everyxbeat);
     }
@@ -8286,6 +8292,7 @@ public final class SpriteSystemPlaceholder {
         public float mouseOffsetY = 0.0;
         public float myDelta = 0.; 
         private boolean customDelta = false;
+        private boolean mouseInputEnabled = true;
 
         public String PATH_SPRITES_ATTRIB;
         public String APPPATH; 
@@ -8305,7 +8312,7 @@ public final class SpriteSystemPlaceholder {
         }
         
         private boolean mouseDown() {
-          return engine.input.primaryDown && !engine.ui.miniMenuShown();
+          return engine.input.primaryDown && !engine.ui.miniMenuShown() && mouseInputEnabled;
         }
         
         public void setDelta(float del) {

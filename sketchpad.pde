@@ -7,9 +7,9 @@ public class Sketchpad extends Screen {
   
   class AutomationBar {
     
-    final float MY_HEIGHT = 100f;
-    final float LABEL_HEIGHT = 28f;
-    final float SELECTION_BOX_WIDTH = 200f;
+    public float myHeight = 100f;
+    public float LABEL_HEIGHT = 28f;
+    public float SELECTION_BOX_WIDTH = 200f;
       
     float TOP_Y = 0f;
     float BOTTOM_Y = 0f;
@@ -19,6 +19,7 @@ public class Sketchpad extends Screen {
     public String name  = "Automation bar";
     protected color mycolor = color(255, 198, 75);
     public boolean snapping = true;
+    public boolean beatsVisible = false;
     
     public AutomationBar(String name) {
       this.name = name;
@@ -28,21 +29,24 @@ public class Sketchpad extends Screen {
       
     }
     
-    public boolean display(int index) {
-      index++;  // Needs to be at least 1.
-      
+    public float getHeight() {
+      return myHeight+LABEL_HEIGHT;
+    }
+    
+    private boolean resizing = false;
+    public boolean display(float yFromBottom) {
       BOTTOM_Y = HEIGHT-myLowerBarWeight;
-      TOP_Y = BOTTOM_Y-(((float)index)*(MY_HEIGHT+LABEL_HEIGHT));
+      TOP_Y = BOTTOM_Y-yFromBottom-getHeight();
       RIGHT_X = middle();
       
       float y = TOP_Y;
       
-      boolean mouseInPane = (input.mouseX() > 0f && input.mouseX() < RIGHT_X-2 && input.mouseY() > y && input.mouseY() < y+MY_HEIGHT+LABEL_HEIGHT);
+      boolean mouseInPane = (input.mouseX() > 0f && input.mouseX() < RIGHT_X-2 && input.mouseY() > y && input.mouseY() < y+myHeight+LABEL_HEIGHT);
       
       app.stroke(200);
       app.strokeWeight(2f);
       app.fill(60);
-      app.rect(0f, y, RIGHT_X-2, MY_HEIGHT+LABEL_HEIGHT);
+      app.rect(0f, y, RIGHT_X-2, myHeight+LABEL_HEIGHT);
       app.line(0f, y+LABEL_HEIGHT, RIGHT_X, y+LABEL_HEIGHT);
       app.fill(255);
       app.textAlign(LEFT, TOP);
@@ -67,7 +71,7 @@ public class Sketchpad extends Screen {
       // Snapping button
       if (snapping) app.tint(255);
       else app.tint(127);
-      boolean snaptoClicked = ui.buttonImg("snapto_64", RIGHT_X*0.5f+LABEL_HEIGHT, y, LABEL_HEIGHT, LABEL_HEIGHT);
+      boolean snaptoClicked = ui.buttonImg("snapto_64", RIGHT_X*0.5f+LABEL_HEIGHT+10f, y, LABEL_HEIGHT, LABEL_HEIGHT);
       app.noTint();
       if (snaptoClicked) {
         snapping = !snapping;
@@ -76,6 +80,34 @@ public class Sketchpad extends Screen {
         save();
       }
       
+      // Show music bars button
+      if (beatsVisible) app.tint(255);
+      else app.tint(127);
+      boolean beatsClicked = ui.buttonImg("music", RIGHT_X*0.5f+(LABEL_HEIGHT+10f)*2f, y, LABEL_HEIGHT, LABEL_HEIGHT);
+      app.noTint();
+      if (beatsClicked) {
+        beatsVisible = !beatsVisible;
+        if (beatsVisible) sound.playSound("select_bigger");
+        else sound.playSound("select_smaller");
+        save();
+      }
+      
+      
+      
+      // Resizer
+      boolean resizerClicked = ui.buttonImg("dragger_64", RIGHT_X-(LABEL_HEIGHT+10f)*2f, y, LABEL_HEIGHT, LABEL_HEIGHT);
+      if (resizerClicked) {
+        resizing = true;
+      }
+      if (resizing) {
+        myHeight = max(BOTTOM_Y-input.mouseY()-yFromBottom-LABEL_HEIGHT/2f, 30f);
+        if (!input.primaryDown) {
+          resizing = false;
+          save();
+        }
+      }
+      
+      // Cross button
       boolean crossClicked = ui.buttonImg("cross", RIGHT_X-LABEL_HEIGHT-5f, y, LABEL_HEIGHT, LABEL_HEIGHT);
       if (crossClicked) {
         sound.playSound("select_smaller");
@@ -83,13 +115,17 @@ public class Sketchpad extends Screen {
         save();
       }
       
-      display.clip(0f, y+LABEL_HEIGHT, RIGHT_X, MY_HEIGHT);
+      display.clip(0f, y+LABEL_HEIGHT, RIGHT_X, myHeight);
       app.noStroke();
       //app.fill(0, 127);
       //app.rect(5, 5, SELECTION_BOX_WIDTH, LABEL_HEIGHT-10f);
       
       prev_x = 0f;
       TOP_Y += LABEL_HEIGHT;
+      
+      if (beatsVisible) {
+        renderBeats();
+      }
       
       renderData();
       
@@ -113,8 +149,8 @@ public class Sketchpad extends Screen {
       float posToTime_prev = (prev_x/TOTAL_WIDTH)*timeLength;
       float posToTime = (x/TOTAL_WIDTH)*timeLength;
       
-      float prev_y = TOP_Y+MY_HEIGHT*(1f-getFloatVal(posToTime_prev));
-      float y = TOP_Y+MY_HEIGHT*(1f-getFloatVal(posToTime));
+      float prev_y = TOP_Y+myHeight*(1f-getFloatVal(posToTime_prev));
+      float y = TOP_Y+myHeight*(1f-getFloatVal(posToTime));
       
       float actualPrevX = prev_x+offX;
       float actualX = x+offX;
@@ -147,11 +183,33 @@ public class Sketchpad extends Screen {
       float TOTAL_WIDTH = timeLength*5f;
       float tt = time/timeLength;
       float offX = (RIGHT_X/2f)-tt*TOTAL_WIDTH;
-      float aactualX = input.mouseX();
-      float val = (aactualX-offX)/TOTAL_WIDTH;
+      float val = (x-offX)/TOTAL_WIDTH;
       float xx = val*timeLength;
       
       return xx;
+    }
+    
+    protected float normalizedXToScreenX(float normalizedX) {
+      float TOTAL_WIDTH = timeLength*5f;
+      float tt = time/timeLength;
+      float offX = (RIGHT_X/2f)-tt*TOTAL_WIDTH;
+      
+      float x = (normalizedX)*TOTAL_WIDTH;
+      float actualX = x+offX;
+      
+      return actualX;
+    }
+    
+    protected void renderBeats() {
+      
+      app.stroke(30, 180);
+      app.strokeWeight(2f);
+      
+      int l = (int)(timeLength/sound.framesPerBeat())+1;
+      for (int i = 0; i < l; i++) {
+        float x = normalizedXToScreenX((sound.framesPerBeat()*float(i))/timeLength);
+        app.line(x, TOP_Y, x, BOTTOM_Y);
+      }
     }
     
     protected void renderData() {
@@ -287,7 +345,6 @@ public class Sketchpad extends Screen {
     
     @Override
     public void save() {
-      console.log("Save bar "+name);
       if (saving.get()) {
         // If already saving don't bother.
         // Ideally we should put the thread into a waiting state
@@ -308,8 +365,10 @@ public class Sketchpad extends Screen {
       
       barjson.setString("name", name);
       barjson.setString("type", "LerpAutomationBar");
+      barjson.setFloat("height", myHeight);
       barjson.setInt("color", mycolor);
       barjson.setBoolean("snapping", snapping);
+      barjson.setBoolean("beats_visible", beatsVisible);
       barjson.setBoolean("in_view", displayAutomationBars.contains(this));
       barjson.setJSONArray("data", jsonarr);
       
@@ -331,6 +390,8 @@ public class Sketchpad extends Screen {
       this.name = json.getString("name");
       this.mycolor = json.getInt("color", color(0,0,0));
       this.snapping = json.getBoolean("snapping", false);
+      this.beatsVisible = json.getBoolean("beats_visible", false);
+      this.myHeight = json.getFloat("height", 100f);
       if (json.getBoolean("in_view", false)) {
         displayAutomationBars.add(this);
       }
@@ -408,7 +469,7 @@ public class Sketchpad extends Screen {
         float x = plotLine(point.t/timeLength, true);
         
         float actualX = x-HALFWIHI;
-        float actualY = TOP_Y+(1f-point.val)*MY_HEIGHT-HALFWIHI;
+        float actualY = TOP_Y+(1f-point.val)*myHeight-HALFWIHI;
         
         //if (actualX > RIGHT_X+200f || actualX < 0f) {
         //  continue;
@@ -449,11 +510,11 @@ public class Sketchpad extends Screen {
           //if (!unsnapDragY) {
           //  if (input.mouseY() > actualY + UNSNAP_THRESHOLD || input.mouseY() < actualY - UNSNAP_THRESHOLD) {
           //    unsnapDragY = true;
-          //    point.val = min(max(1f-(input.mouseY()-TOP_Y)/MY_HEIGHT, 0f), 1f);
+          //    point.val = min(max(1f-(input.mouseY()-TOP_Y)/myHeight, 0f), 1f);
           //  }
           //}
           //else {
-            float vv = min(max(1f-(input.mouseY()-TOP_Y)/MY_HEIGHT, 0f), 1f);
+            float vv = min(max(1f-(input.mouseY()-TOP_Y)/myHeight, 0f), 1f);
             
             point.val = vv;
             if (snapping) {
@@ -523,7 +584,7 @@ public class Sketchpad extends Screen {
         save();
       }
       else if (createPointAtIndex != -1) {
-        points.add(createPointAtIndex, new Point(screenXToTime(input.mouseX()), min(max(1f-(input.mouseY()-TOP_Y)/MY_HEIGHT, 0f), 1f)));
+        points.add(createPointAtIndex, new Point(screenXToTime(input.mouseX()), min(max(1f-(input.mouseY()-TOP_Y)/myHeight, 0f), 1f)));
         createPointAtIndex = -1;
         save();
       }
@@ -612,11 +673,8 @@ public class Sketchpad extends Screen {
   final static int TIMELINE_PANE = 3;
   final static int AUTOBAR_PANE = 4;
   
-  public LerpAutomationBar testTimeSet1;
-  public LerpAutomationBar testTimeSet2;
-  
+  private final int MAX_DISPLAY_AUTOMATION_BARS = 8;
   private HashMap<String, AutomationBar> automationBars = new HashMap<String, AutomationBar>();
-  private final int MAX_DISPLAY_AUTOMATION_BARS = 4;
   private ArrayList<AutomationBar> displayAutomationBars = new ArrayList<AutomationBar>();
   
   
@@ -665,11 +723,6 @@ public class Sketchpad extends Screen {
     lastSelectedPane = CODE_PANE;
     
     //sound.streamMusic(engine.APPPATH+"engine/music/test.mp3");
-  }
-  
-  {
-    testTimeSet1 = new LerpAutomationBar("Test1");
-    testTimeSet2 = new LerpAutomationBar("Test2");
   }
   
   //{
@@ -1048,6 +1101,14 @@ public class Sketchpad extends Screen {
     return sketchiePath;
   }
   
+  public float getAutoFloat(String autobarname) {
+    if (automationBars.containsKey(autobarname)) {
+      return automationBars.get(autobarname).getFloatVal(time);
+    }
+    // TODO: proper warning mechanism
+    return -1f;
+  }
+  
   public boolean codeOK() {
     return (successful.get() && !compiling.get() && !loading.get());
   }
@@ -1137,6 +1198,11 @@ public class Sketchpad extends Screen {
     }
   }
   
+  private void disableSpritesClick() {
+    if (sprites != null) {
+      sprites.mouseInputEnabled = false;
+    }
+  }
   
   
   
@@ -1985,7 +2051,12 @@ public class Sketchpad extends Screen {
       plugin.run();
       canvas.endDraw();
     }
+    
     sprites.updateSpriteSystem();
+    if (sprites != null) {
+      sprites.mouseInputEnabled = true;
+    }
+    
     display.setPGraphics(app.g);
     
     if (codeOK()) {
@@ -2068,6 +2139,7 @@ public class Sketchpad extends Screen {
     input.addNewlineWhenEnterPressed = codeEditorShown;
     engine.allowShowCommandPrompt = !codeEditorShown;
     
+    
     if (!loading.get()) {
       if (processAfterLoadingIndex.get() > 0) {
         int i = processAfterLoadingIndex.decrementAndGet();
@@ -2107,14 +2179,18 @@ public class Sketchpad extends Screen {
       // Woops, gotta get the boolean value a frame late, who cares.
       
       // Display timesets and stuff
-      //mouseInAutomationBarPane = testTimeSet1.display(0);
-      //mouseInAutomationBarPane |= testTimeSet2.display(1);
+      
       mouseInAutomationBarPane = false;
-      for (int i = 0; i < displayAutomationBars.size(); i++) {
-        mouseInAutomationBarPane |= displayAutomationBars.get(i).display(i);
+      if (!menuShown()) {
+        float y = 0f;
+        for (int i = 0; i < displayAutomationBars.size(); i++) {
+          mouseInAutomationBarPane |= displayAutomationBars.get(i).display(y);
+          y += displayAutomationBars.get(i).getHeight();
+        }
       }
       
       if (mouseInAutomationBarPane) {
+        disableSpritesClick();
         if (input.primaryOnce) {
           selectedPane = AUTOBAR_PANE;
         }
@@ -2218,6 +2294,15 @@ public class Sketchpad extends Screen {
         } 
       }
       
+      if (ui.button("openscript_button", "doc_128", "Extern open")) {
+        sound.playSound("select_any");
+        file.open(sketchiePath+"scripts/main.java");
+        if (codeEditorShown) {
+          codeEditorShown = false;
+          saveConfig();
+        }
+      }
+      
       if (ui.button("showcode_button", "code_128", codeEditorShown ? "Hide code" : "Show code")) {
         sound.playSound("select_any");
         codeEditorShown = !codeEditorShown;
@@ -2284,6 +2369,7 @@ public class Sketchpad extends Screen {
     }
     
     gui.updateSpriteSystem();
+    
   }
   
   private boolean selectedPaneTimeline() {
@@ -2340,6 +2426,7 @@ public class Sketchpad extends Screen {
     if ((input.mouseY() > y || selectedPane == TIMELINE_PANE) && !ui.miniMenuShown()) {
       if (input.mouseX() > BAR_X_START) {
         // If in bar zone
+        disableSpritesClick();
         if (input.primaryDown && selectedPaneTimeline()) {
           float notchPercent = min(max((input.mouseX()-BAR_X_START)/BAR_X_LENGTH, 0.), 1.);
           time = timeLength*notchPercent;

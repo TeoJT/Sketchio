@@ -253,6 +253,10 @@ public class CustomPlugin {
   public float getAutoFloatTest() {
     return getFloat(28);
   }
+  
+  public float getAutoFloat(String name) {
+    return getFloat(29, name);
+  }
 
 
 
