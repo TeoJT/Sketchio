@@ -33,6 +33,11 @@ public class Sketchpad extends Screen {
       return myHeight+LABEL_HEIGHT;
     }
     
+    
+    public void resizeTime() {
+      
+    }
+    
     private boolean resizing = false;
     public boolean display(float yFromBottom) {
       BOTTOM_Y = HEIGHT-myLowerBarWeight;
@@ -140,7 +145,7 @@ public class Sketchpad extends Screen {
     
     private float prev_x = 0f;
     protected float plotLine(float normalizedX, boolean showVal) {
-      float TOTAL_WIDTH = timeLength*5f;
+      float TOTAL_WIDTH = timeLength*autoBarsZoom;
       float tt = time/timeLength;
       float offX = (RIGHT_X/2f)-tt*TOTAL_WIDTH;
       
@@ -165,7 +170,7 @@ public class Sketchpad extends Screen {
       if (showVal) {
         app.textSize(10);
         app.textAlign(CENTER, TOP);
-        app.text(getFloatVal(posToTime_prev), x+offX, y-15f);
+        app.text(getFloatVal(posToTime), x+offX, y-19f);
       }
       
       return actualX;
@@ -180,7 +185,7 @@ public class Sketchpad extends Screen {
     }
     
     protected float screenXToTime(float x) {
-      float TOTAL_WIDTH = timeLength*5f;
+      float TOTAL_WIDTH = timeLength*autoBarsZoom;
       float tt = time/timeLength;
       float offX = (RIGHT_X/2f)-tt*TOTAL_WIDTH;
       float val = (x-offX)/TOTAL_WIDTH;
@@ -190,7 +195,7 @@ public class Sketchpad extends Screen {
     }
     
     protected float normalizedXToScreenX(float normalizedX) {
-      float TOTAL_WIDTH = timeLength*5f;
+      float TOTAL_WIDTH = timeLength*autoBarsZoom;
       float tt = time/timeLength;
       float offX = (RIGHT_X/2f)-tt*TOTAL_WIDTH;
       
@@ -275,6 +280,14 @@ public class Sketchpad extends Screen {
       return getFloatVal(time, false);
     }
     
+    // Simply brings the last point to the end of the animation.
+    @Override
+    public void resizeTime() {
+      if (points.size() > 0) {
+        points.get(points.size()-1).t = timeLength;
+      }
+    }
+    
     // How to find the index with an arbritrary float value?
     // Do it the lazy way cus I can't be bothered with a big algorithm.
     // Select an approximate point and then backtrace until we find a point between our float val.
@@ -282,7 +295,10 @@ public class Sketchpad extends Screen {
       // Calc approx
       int l = points.size();
       int index = min((int)((ttime/timeLength)*((float)l)), l-1);
-     
+      
+      if (ttime >= timeLength-0.02) {
+        return points.get(l-1).val;
+      }
       
       try {
         int count = 0;
@@ -290,7 +306,7 @@ public class Sketchpad extends Screen {
           count++;
           index--;
         }
-        while (index < l-3 && points.get(index+1).t < ttime) {
+        while (index < l-2 && points.get(index+1).t < ttime) {
           count++;
           index++;
         }
@@ -589,8 +605,8 @@ public class Sketchpad extends Screen {
         prevActualY = actualY;
       }
       
-      // Do not allow deletion of index 0
-      if (pointIndexForDeletion > 0 && points.size() > 2) {
+      // Do not allow deletion of index 0 or the last index.
+      if (pointIndexForDeletion > 0 && points.size() > 2 && pointIndexForDeletion != points.size()-1) {
         points.remove(pointIndexForDeletion);
         pointIndexForDeletion = -1;
         save();
@@ -1094,6 +1110,10 @@ public class Sketchpad extends Screen {
     return time/60.;
   }
   
+  public float getBMP() {
+    return bpm;
+  }
+  
   public float getDelta() {
     // When we're rendering, all the file IO and expensive rendering operations will
     // inevitably make the actual framerate WAY lower than what we're aiming for and therefore
@@ -1133,6 +1153,13 @@ public class Sketchpad extends Screen {
         AutomationBar b = displayAutomationBars.remove(0);
         b.save();
       }
+    }
+  }
+  
+  public void resizeAutomationBarTimes() {
+    for (AutomationBar b : automationBars.values()) {
+      b.resizeTime();
+      b.save();
     }
   }
   
@@ -1245,7 +1272,7 @@ public class Sketchpad extends Screen {
     
     // Difficulty: we have 2 scroll areas: canvas zoom, and code editor.
     // if mouse is in canvas pane
-    boolean canvasPane = input.mouseX() < middle() && !menuShown();
+    boolean canvasPane = input.mouseX() < middle() && !menuShown() && allowMouseActivity;
     if (canvasPane && allowMouseActivity) {
       if (!inCanvasPane) {
         inCanvasPane = true;
@@ -1626,6 +1653,7 @@ public class Sketchpad extends Screen {
           int wi = Integer.parseInt(widthField.value);
           int hi = Integer.parseInt(heightField.value);
           timeLength = Float.parseFloat(timeLengthField.value)*60.;
+          resizeAutomationBarTimes();
           bpm = Float.parseFloat(bpmField.value);
           sound.setBPM(bpm);
           
@@ -2142,7 +2170,9 @@ public class Sketchpad extends Screen {
     }
   }
   
-  boolean mouseInAutomationBarPane = false;
+  private boolean mouseInAutomationBarPane = false;
+  private float autoBarsZoom = 5f;
+  private int autoBarsZoomPauseTimeout = 60;
   
   public void content() {
     power.setAwake();
@@ -2210,7 +2240,27 @@ public class Sketchpad extends Screen {
         if (input.primaryOnce) {
           selectedPane = AUTOBAR_PANE;
         }
+        
+        // Copy+paste crap
+        // This if statement? There's a bug where as soon as we launch a project,
+        // it seems to automatically make it shrink.
+        // So instead of figuring out why the heck this happens, let's just apply
+        // a pause before we can zoom out the bars. EZ.
+        if (autoBarsZoomPauseTimeout <= 0) {
+          
+          
+          if (inCanvasPane) {
+            inCanvasPane = false;
+            // We need to switch to our scroll value for the code scroll
+            canvasPaneScroll   = input.scrollOffset;     
+            input.scrollOffset = autoBarsZoom*500f;
+          }
+          input.processScroll(8000f, 0f);
+          
+          autoBarsZoom = input.scrollOffset/500f;
+        }
       }
+      if (autoBarsZoomPauseTimeout > 0) autoBarsZoomPauseTimeout--;
       
       if (codeEditorShown()) {
         displayCodeEditor();

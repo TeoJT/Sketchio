@@ -4917,9 +4917,6 @@ public class TWEngine {
   
   
   public class PluginModule {
-    
-    private String pluginBoilerplateCode_1 = "";
-    private String pluginBoilerplateCode_2 = "";
     private String exepath;
     private String javapath;
     private int cacheEntry = 0;
@@ -4927,18 +4924,6 @@ public class TWEngine {
     public PluginModule() {
       // Load the boilerplate for plugin code.
       if (file.exists(APPPATH+BOILERPLATE_PATH)) {
-        String[] txts = app.loadStrings(APPPATH+BOILERPLATE_PATH);
-        boolean secondPart = false;
-        for (String s : txts) {
-          if (!secondPart && s.trim().equals("[plugin_code]")) {
-            // Don't add [plugin_code] line, initiate the second part.
-            secondPart = true;
-          }
-          else if (!secondPart)
-            pluginBoilerplateCode_1 += s+"\n";
-          else
-            pluginBoilerplateCode_2 += s+"\n";
-        }
       }
       else {
         console.warn(APPPATH+BOILERPLATE_PATH+" not found! Plugins will not work.");
@@ -5071,6 +5056,30 @@ public class TWEngine {
         compiled = false;
         
         console.log("Compiling plugin...");
+        
+        String pluginBoilerplateCode_1 = "";
+        String pluginBoilerplateCode_2 = "";
+        
+        
+        // Moved here instead of setup because we want to be able to modify the boilerplate file too without having to restart
+        // the program each time.
+        if (file.exists(APPPATH+BOILERPLATE_PATH)) {
+          String[] txts = app.loadStrings(APPPATH+BOILERPLATE_PATH);
+          boolean secondPart = false;
+          for (String s : txts) {
+            if (!secondPart && s.trim().equals("[plugin_code]")) {
+              // Don't add [plugin_code] line, initiate the second part.
+              secondPart = true;
+            }
+            else if (!secondPart)
+              pluginBoilerplateCode_1 += s+"\n";
+            else
+              pluginBoilerplateCode_2 += s+"\n";
+          }
+        }
+        else {
+          console.warn(APPPATH+BOILERPLATE_PATH+" not found! Plugins will not work.");
+        }
         
         // We don't actually need the cache info, but calling this method will
         // create the cache folder if it doesn't already exist, which is wayyyy

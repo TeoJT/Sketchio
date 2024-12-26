@@ -170,10 +170,12 @@ public Object runTWIT(int opcode, Object[] args) {
           return timewayEngine.sound.beatSaw();
         }
         
+        // beatToTime()
         case 22: {
           return timewayEngine.sound.beatToTime(((int)args[0])-1);
         }
         
+        // beatToTime()
         case 23: {
           return timewayEngine.sound.beatToTime(((int)args[0])-1, ((int)args[1])-1);
         }
@@ -227,6 +229,7 @@ public Object runTWIT(int opcode, Object[] args) {
           break;
         }
         
+        // getAutoFloat()
         case 29: {
           if (timewayEngine.currScreen instanceof Sketchpad) {
             Sketchpad sk = (Sketchpad)timewayEngine.currScreen;
@@ -235,6 +238,14 @@ public Object runTWIT(int opcode, Object[] args) {
           return 0f;
         }
         
+        // getBPM()
+        case 30: {
+          if (timewayEngine.currScreen instanceof Sketchpad) {
+            Sketchpad sk = (Sketchpad)timewayEngine.currScreen;
+            return sk.getBMP();
+          }
+          return 1f;
+        }
         
         
         
