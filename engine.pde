@@ -8593,20 +8593,22 @@ public final class SpriteSystemPlaceholder {
                 
                 //Vertex position
                 for (int i = 0; i < 4; i++) {
-                vertex.v[i].add(x-oldX, y-oldY);
+                  vertex.v[i].add(xpos-oldX, ypos-oldY);
+                  defvertex.v[i].add(xpos-oldX, ypos-oldY);
                 }
             }
             
             public void offmove(float x, float y) {
-                float oldX = xpos;
-                float oldY = ypos;
+                //float oldX = xpos;
+                //float oldY = ypos;
                 offxpos = x;
                 offypos = y;
                 xpos = defxpos+x;
                 ypos = defypos+y;
                 
                 for (int i = 0; i < 4; i++) {
-                vertex.v[i].add(xpos-oldX, ypos-oldY);
+                  //vertex.v[i].add(xpos-oldX, ypos-oldY);
+                  offvertex(i, x, y);
                 }
             }
             
@@ -9185,8 +9187,9 @@ public final class SpriteSystemPlaceholder {
                 }
                 
                 for (int i = 0; i < 4; i++) {
-                    s.vertex.v[i].set(att.getInt("vx"+str(i)), att.getInt("vy"+str(i)));
-                    s.defvertex.v[i].set(att.getInt("vx"+str(i)), att.getInt("vy"+str(i)));
+                    //s.vertex.v[i].set(att.getInt("vx"+str(i)), att.getInt("vy"+str(i)));
+                    //s.defvertex.v[i].set(att.getInt("vx"+str(i)), att.getInt("vy"+str(i)));
+                    s.vertex(i, att.getInt("vx"+str(i)), att.getInt("vy"+str(i)));
                 }
             }
         }

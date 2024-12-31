@@ -431,6 +431,19 @@ public class CustomPlugin {
     return getFloat(30);
   }
 
+  public void spriteV0(String name, float x, float y) {
+      call(31, name, x, y);
+  }
+  public void spriteV1(String name, float x, float y) {
+      call(32, name, x, y);
+  }
+  public void spriteV2(String name, float x, float y) {
+      call(33, name, x, y);
+  }
+  public void spriteV3(String name, float x, float y) {
+      call(34, name, x, y);
+  }
+
 
 
 
@@ -1384,5 +1397,15 @@ public class CustomPlugin {
   }
   public void filter(int kind, float param) {
         g.filter(kind, param);
+  }
+
+  public float sin(float d) {
+      return app.sin(d);
+  }
+  public float cos(float d) {
+      return app.cos(d);
+  }
+  public float tan(float d) {
+      return app.tan(d);
   }
 }

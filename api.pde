@@ -247,6 +247,30 @@ public Object runTWIT(int opcode, Object[] args) {
           return 1f;
         }
         
+        // spriteV0()
+        case 31:
+        timewayEngine.ui.currentSpritePlaceholderSystem.
+        getSprite((String)args[0]).offvertex(0, (float)args[1], (float)args[2]);
+        break;
+        
+        // spriteV1()
+        case 32:
+        timewayEngine.ui.currentSpritePlaceholderSystem.
+        getSprite((String)args[0]).offvertex(1, (float)args[1], (float)args[2]);
+        break;
+        
+        // spriteV2()
+        case 33:
+        timewayEngine.ui.currentSpritePlaceholderSystem.
+        getSprite((String)args[0]).offvertex(2, (float)args[1], (float)args[2]);
+        break;
+        
+        // spriteV3()
+        case 34:
+        timewayEngine.ui.currentSpritePlaceholderSystem.
+        getSprite((String)args[0]).offvertex(3, (float)args[1], (float)args[2]);
+        break;
+        
         
         
         default:
