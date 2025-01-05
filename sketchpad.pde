@@ -1907,7 +1907,7 @@ public class Sketchpad extends Screen {
           // Try catch here cus otherwise we'd have to do multiple null checks here and I'd rather my code
           // not be an untidy mess.
           try {
-            PImage img = display.systemImages.get(sprites.selectedSprite.imgName).pimage;
+            PImage img = display.systemImages.get(sprites.selectedSprite.imgName);
             int wi = img.width;
             int hi = img.height;
             sprites.selectedSprite.setWidth(wi*scale);
@@ -2187,12 +2187,10 @@ public class Sketchpad extends Screen {
         int i = processAfterLoadingIndex.decrementAndGet();
         
         // Create large image, I don't want the lag
-        // TODO: option to select large image or normal pimage.
-        LargeImage largeimg = display.createLargeImage(loadedImages.get(i));
         
         
         // Add to systemimages so we can use it in our sprites
-        display.systemImages.put(imagesInSketch.get(i), new DImage(largeimg, loadedImages.get(i)));
+        display.systemImages.put(imagesInSketch.get(i), loadedImages.get(i));
         
         
         if (i == 0) {
@@ -2810,10 +2808,9 @@ public class Sketchpad extends Screen {
       int count = 0;
       for (String path : updateItems) {
         PImage img = loadImage(path);
-        LargeImage largeimg = display.createLargeImage(img);
         
         // Add to systemimages so we can use it in our sprites
-        display.systemImages.put(file.getIsolatedFilename(path), new DImage(largeimg, img));
+        display.systemImages.put(file.getIsolatedFilename(path), img);
         count++;
       }
       updateItems.clear();

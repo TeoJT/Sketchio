@@ -129,24 +129,23 @@ public Object runTWIT(int opcode, Object[] args) {
         
         // getImg(String name);
         case 16: {
-          DImage dimg = timewayEngine.display.getImg((String)args[0]);
-          if (dimg == null || dimg.pimage == null) return timewayEngine.display.errorImg;
-          else return dimg.pimage;
+          PImage img = timewayEngine.display.getImg((String)args[0]);
+          if (img == null) return timewayEngine.display.errorImg;
+          else return img;
         }
         
         // largeImg(String name, float x, float y, float w, float h)
         case 17: {
-          DImage dimg = timewayEngine.display.getImg((String)args[0]);
+          PImage img = timewayEngine.display.getImg((String)args[0]);
           
           // Bit of error checking
-          Sketchpad sk = null;
-          if (dimg == null || dimg.pimage == null) return timewayEngine.display.errorImg;
+          if (img == null) return timewayEngine.display.errorImg;
           if (timewayEngine.currScreen instanceof Sketchpad) {
-            sk = (Sketchpad)timewayEngine.currScreen;
           }
           else break;
           
-          timewayEngine.display.largeImg(sk.canvas, dimg.largeImage, (float)args[1], (float)args[2], (float)args[3], (float)args[4]);
+          timewayEngine.display.img(img, (float)args[1], (float)args[2], (float)args[3], (float)args[4]);
+          timewayEngine.console.warn("largeImg() is depricated.");
           break;
         }
         
