@@ -283,6 +283,19 @@ public class Sketchpad extends Screen {
     // Simply brings the last point to the end of the animation.
     @Override
     public void resizeTime() {
+      // Delete all points in shortening timelength.
+      // (Except the last point)
+      ArrayList<Point> pointsToDelete = new ArrayList<Point>();
+      for (int i = 0; i < points.size(); i++) {
+        if (points.get(i).t > timeLength && i != points.size()-1) {
+          pointsToDelete.add(points.get(i));
+        }
+      }
+      for (Point p : pointsToDelete) {
+        points.remove(p);
+      }
+      
+      // Move last point to the new time position
       if (points.size() > 0) {
         points.get(points.size()-1).t = timeLength;
       }
@@ -541,13 +554,21 @@ public class Sketchpad extends Screen {
           //else {
             float vv = min(max(1f-(input.mouseY()-TOP_Y)/myHeight, 0f), 1f);
             
+            float nextval = timeLength;
+            float prevval = -1;
+            if (i-1 >= 0) {
+              prevval = points.get(i-1).val;
+            }
+            if (i+1 < points.size()) {
+              nextval = points.get(i+1).val;
+            }
+            
             point.val = vv;
             if (snapping) {
               // Point behind
               app.strokeWeight(1f);
               app.stroke(255, 127);
               if (i-1 >= 0) {
-                float prevval = points.get(i-1).val;
                 if (vv < prevval+VAL_SNAP_THRESHOLD && vv > prevval-VAL_SNAP_THRESHOLD) {
                   point.val = prevval;
                   app.line(0, actualY+HALFWIHI, RIGHT_X, actualY+HALFWIHI);
@@ -556,7 +577,6 @@ public class Sketchpad extends Screen {
               
               // Point behind
               if (i+1 < points.size()) {
-                float nextval = points.get(i+1).val;
                 if (vv < nextval+VAL_SNAP_THRESHOLD && vv > nextval-VAL_SNAP_THRESHOLD) {
                   point.val = nextval;
                   app.line(0, actualY+HALFWIHI, RIGHT_X, actualY+HALFWIHI);
@@ -589,7 +609,10 @@ public class Sketchpad extends Screen {
                 }
                 
                 point.t = min(max(screenXToTime(input.mouseX()), minx), maxx);
-                if (snapping && beatsVisible && closestBeatSnap > 0f) {
+                if (snapping && beatsVisible && closestBeatSnap > 0f
+                  && vv < prevval+VAL_SNAP_THRESHOLD && vv > prevval-VAL_SNAP_THRESHOLD
+                  && vv < nextval+VAL_SNAP_THRESHOLD && vv > nextval-VAL_SNAP_THRESHOLD
+                ) {
                   point.t = closestBeatSnap;
                 }
             }
@@ -915,8 +938,8 @@ public class Sketchpad extends Screen {
         ccode += s+"\n";
       }
     }
-    println(" ---------------------- CODE: ----------------------");
-    println(ccode);
+    //println(" ---------------------- CODE: ----------------------");
+    //println(ccode);
     return ccode;
   }
   

@@ -162,7 +162,8 @@ public void desktopOpen(String file) {
         desktop.open(myFile);
       }
       catch (IllegalArgumentException fileNotFound) {
-        timewayEngine.console.log("This file or dir no longer exists!");
+        //timewayEngine.console.log("This file or dir no longer exists!");
+        timewayEngine.console.warn(fileNotFound.getMessage());
         timewayEngine.file.refreshDir();
       }
     } 

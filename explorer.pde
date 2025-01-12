@@ -138,7 +138,7 @@ public class Explorer extends Screen {
         }
       };
       
-      engine.beginInputPrompt("New project name:", r);
+      engine.beginInputPrompt("Folder name:", r);
     }
     
     
@@ -154,10 +154,11 @@ public class Explorer extends Screen {
           String name = file.currentDir+input.keyboardMessage;
           createNewProject(name);
           refreshDir();
+          file.open(name+"."+engine.SKETCHIO_EXTENSION);
         }
       };
       
-      engine.beginInputPrompt("Folder name:", r);
+      engine.beginInputPrompt("Project name:", r);
     }
     
     gui.updateSpriteSystem();
