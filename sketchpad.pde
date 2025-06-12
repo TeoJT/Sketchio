@@ -20,6 +20,7 @@ public class Sketchpad extends Screen {
     protected color mycolor = color(255, 198, 75);
     public boolean snapping = true;
     public boolean beatsVisible = false;
+    public boolean quartersVisible = false;
     
     public AutomationBar(String name) {
       this.name = name;
@@ -86,17 +87,30 @@ public class Sketchpad extends Screen {
       }
       
       // Show music bars button
-      if (beatsVisible) app.tint(255);
-      else app.tint(127);
+      // It has 3 modes: off, beats, and quarters
+      if (quartersVisible) app.tint(255);
+      else if (beatsVisible) app.tint(180);
+      else app.tint(100);
       boolean beatsClicked = ui.buttonImg("music", RIGHT_X*0.5f+(LABEL_HEIGHT+10f)*2f, y, LABEL_HEIGHT, LABEL_HEIGHT);
       app.noTint();
       if (beatsClicked) {
-        beatsVisible = !beatsVisible;
-        if (beatsVisible) sound.playSound("select_bigger");
-        else sound.playSound("select_smaller");
+        if (quartersVisible) {
+          quartersVisible = false;
+          beatsVisible = false;
+          sound.playSound("select_smaller");
+        }
+        else if (beatsVisible) {
+          quartersVisible = true;
+          sound.playSound("select_bigger");
+        }
+        else {
+          beatsVisible = true;
+          sound.playSound("select_bigger");
+          
+        }
+        
         save();
       }
-      
       
       
       // Resizer
@@ -141,6 +155,26 @@ public class Sketchpad extends Screen {
     
     public float getFloatVal(float ttime) {
       return engine.noise(ttime*0.1);
+    }
+    
+    public float getActualX(float pointV) {
+      float normalizedX = pointV/timeLength;
+      float TOTAL_WIDTH = timeLength*autoBarsZoom;
+      float tt = time/timeLength;
+      float offX = (RIGHT_X/2f)-tt*TOTAL_WIDTH;
+      
+      float x = (normalizedX)*TOTAL_WIDTH;
+      
+      float posToTime_prev = (prev_x/TOTAL_WIDTH)*timeLength;
+      float posToTime = (x/TOTAL_WIDTH)*timeLength;
+      
+      float prev_y = TOP_Y+myHeight*(1f-getFloatVal(posToTime_prev));
+      float y = TOP_Y+myHeight*(1f-getFloatVal(posToTime));
+      
+      float actualPrevX = prev_x+offX;
+      float actualX = x+offX;
+      
+      return actualX;
     }
     
     private float prev_x = 0f;
@@ -210,16 +244,26 @@ public class Sketchpad extends Screen {
     protected float BEATSNAP_THRESHOLD = 10f;
     protected void renderBeats() {
       
-      app.stroke(30, 180);
       app.strokeWeight(2f);
       closestBeatSnap = -1f;
       
-      int l = (int)(timeLength/sound.framesPerBeat())+1;
+      float framesPerX = quartersVisible ? sound.framesPerQuarter() : sound.framesPerBeat();
+      
+      int l = (int)(timeLength/framesPerX)+1;
       for (int i = 0; i < l; i++) {
-        float x = normalizedXToScreenX((sound.framesPerBeat()*float(i))/timeLength);
+        float x = normalizedXToScreenX((framesPerX*float(i))/timeLength);
         
         if (input.mouseX() > x-BEATSNAP_THRESHOLD && input.mouseX() < x+BEATSNAP_THRESHOLD) {
           closestBeatSnap = screenXToTime(x);
+        }
+        
+        if (quartersVisible && i % 4 != 0) {
+          app.stroke(100, 100);
+          app.strokeWeight(1f);
+        }
+        else {
+          app.stroke(30, 180);
+          app.strokeWeight(3f);
         }
         
         app.line(x, TOP_Y, x, BOTTOM_Y);
@@ -407,6 +451,7 @@ public class Sketchpad extends Screen {
       barjson.setInt("color", mycolor);
       barjson.setBoolean("snapping", snapping);
       barjson.setBoolean("beats_visible", beatsVisible);
+      barjson.setBoolean("quarters_visible", quartersVisible);
       barjson.setBoolean("in_view", displayAutomationBars.contains(this));
       barjson.setJSONArray("data", jsonarr);
       
@@ -429,6 +474,7 @@ public class Sketchpad extends Screen {
       this.mycolor = json.getInt("color", color(0,0,0));
       this.snapping = json.getBoolean("snapping", false);
       this.beatsVisible = json.getBoolean("beats_visible", false);
+      this.quartersVisible = json.getBoolean("quarters_visible", false);
       this.myHeight = json.getFloat("height", 100f);
       if (json.getBoolean("in_view", false)) {
         displayAutomationBars.add(this);
@@ -468,7 +514,7 @@ public class Sketchpad extends Screen {
       final float RECTWIHI = 12f;
       final float HALFWIHI = RECTWIHI/2f;
       final float UNSNAP_THRESHOLD = 20f;
-      final float VAL_SNAP_THRESHOLD = 0.05f;
+      final float VAL_SNAP_THRESHOLD = settings.getFloat("snapping_threshold", 0.025f);
       
     
       if (!input.primaryDown && draggingIndex != -1) {
@@ -494,6 +540,7 @@ public class Sketchpad extends Screen {
         app.fill(255);
         app.strokeWeight(2f);
         
+        // Hovering over line makes it white
         if (hoverLineIndex == i) {
           app.stroke(255);
           hoverLineIndex = -1;
@@ -502,10 +549,13 @@ public class Sketchpad extends Screen {
           app.stroke(mycolor);
         }
         
+        // Get point
         Point point = points.get(i);
         
+        // Now render said line from prev to current.
         float x = plotLine(point.t/timeLength, true);
         
+        // Physical x/y position of the point to render on the screen.
         float actualX = x-HALFWIHI;
         float actualY = TOP_Y+(1f-point.val)*myHeight-HALFWIHI;
         
@@ -513,31 +563,40 @@ public class Sketchpad extends Screen {
         //  continue;
         //}
         
+        // Hovering over the square point (makes it white)
         if (input.mouseX() > actualX && input.mouseX() < actualX+RECTWIHI && input.mouseY() > actualY && input.mouseY() < actualY+RECTWIHI && !playing) {
           app.fill(255);
           hoverLineIndex = -1;
           
+          // Clicking and holding to begin dragging that square.
           if (input.primaryOnce) {
             draggingIndex = i;
             unsnapDragX = false;
             unsnapDragY = false;
           }
+          
+          // Delete the point
           if (input.secondaryOnce) {
             pointIndexForDeletion = i;
           }
         }
+        
+        // Overing over the line with the mouse (uses lineRect collisison detection)
         else if (lineRect(actualX, actualY, prevActualX, prevActualY, lineSelectorX, lineSelectorY, RECTWIHI, RECTWIHI) && !playing) {
           hoverLineIndex = i;
           app.fill(mycolor);
           
+          // Create point when right-clicked (of course, needs to be a blank area, we cannot access this part of the code if we're already hovering over an existing square)
           if (input.secondaryOnce) {
             createPointAtIndex = i;
           }
         }
         else {
+          // Normal fill
           app.fill(mycolor);
         }
         
+        // Currently dragging point
         if (draggingIndex == i) {
           app.fill(255);
           // Update point to new position.
@@ -552,36 +611,48 @@ public class Sketchpad extends Screen {
           //  }
           //}
           //else {
+            
+            // Convert raw mouse x/y to the 0.0 - 1.0 value that the points use.
             float vv = min(max(1f-(input.mouseY()-TOP_Y)/myHeight, 0f), 1f);
             
-            float nextval = timeLength;
-            float prevval = -1;
-            if (i-1 >= 0) {
-              prevval = points.get(i-1).val;
-            }
-            if (i+1 < points.size()) {
-              nextval = points.get(i+1).val;
-            }
+            // get prev and next vals.
+            // TODO: delete
+            //float nextval = timeLength;
+            //float prevval = -1;
+            //if (i-1 >= 0) {
+            //  prevval = points.get(i-1).val;
+            //}
+            //if (i+1 < points.size()) {
+            //  nextval = points.get(i+1).val;
+            //}
             
+            // Snapping logic for all on-screen visible points.
             point.val = vv;
             if (snapping) {
               // Point behind
               app.strokeWeight(1f);
               app.stroke(255, 127);
-              if (i-1 >= 0) {
-                if (vv < prevval+VAL_SNAP_THRESHOLD && vv > prevval-VAL_SNAP_THRESHOLD) {
-                  point.val = prevval;
-                  app.line(0, actualY+HALFWIHI, RIGHT_X, actualY+HALFWIHI);
+              
+              // This loop looks at all prev and next points that are visible on-screen and snaps the current dragging point to one of these points
+              for (int j = 0; j < points.size(); j++) {
+                float jactualX = getActualX(points.get(j).t);
+                if (j != i && jactualX > 0f && jactualX < middle()) {
+                  float jval = points.get(j).val;
+                  if (vv < jval+VAL_SNAP_THRESHOLD && vv > jval-VAL_SNAP_THRESHOLD) {
+                    point.val = jval;
+                    app.line(0, actualY+HALFWIHI, RIGHT_X, actualY+HALFWIHI);
+                    break;
+                  }
                 }
               }
               
-              // Point behind
-              if (i+1 < points.size()) {
-                if (vv < nextval+VAL_SNAP_THRESHOLD && vv > nextval-VAL_SNAP_THRESHOLD) {
-                  point.val = nextval;
-                  app.line(0, actualY+HALFWIHI, RIGHT_X, actualY+HALFWIHI);
-                }
-              }
+              // Point infront
+              //if (i+1 < points.size()) {
+              //  if (vv < nextval+VAL_SNAP_THRESHOLD && vv > nextval-VAL_SNAP_THRESHOLD) {
+              //    point.val = nextval;
+              //    app.line(0, actualY+HALFWIHI, RIGHT_X, actualY+HALFWIHI);
+              //  }
+              //}
             }
           //}
           
@@ -601,19 +672,30 @@ public class Sketchpad extends Screen {
                 float minx = 0f;
                 float maxx = timeLength;
                 
+                float nextT = timeLength;
+                float prevT = -1;
+                
                 if (i-1 >= 0) {
                   minx = points.get(i-1).t+MICRO_OFFSET;
+                  prevT = points.get(i-1).t;
                 }
                 if (i+1 < points.size()) {
                   maxx = points.get(i+1).t-MICRO_OFFSET;
+                  nextT = points.get(i+1).t;
                 }
                 
-                point.t = min(max(screenXToTime(input.mouseX()), minx), maxx);
+                // Update the point's x pos
+                float newPointXPos = screenXToTime(input.mouseX());
+                
+                // Snap to the beats on the bars
                 if (snapping && beatsVisible && closestBeatSnap > 0f
-                  && vv < prevval+VAL_SNAP_THRESHOLD && vv > prevval-VAL_SNAP_THRESHOLD
-                  && vv < nextval+VAL_SNAP_THRESHOLD && vv > nextval-VAL_SNAP_THRESHOLD
+                  && newPointXPos > prevT
+                  && newPointXPos < nextT
                 ) {
                   point.t = closestBeatSnap;
+                }
+                else {
+                  point.t = min(max(newPointXPos, minx), maxx);
                 }
             }
           }
@@ -1162,7 +1244,9 @@ public class Sketchpad extends Screen {
     if (automationBars.containsKey(autobarname)) {
       return automationBars.get(autobarname).getFloatVal(time);
     }
-    // TODO: proper warning mechanism
+    else {
+      console.warnOnce("Unknown autobar \""+autobarname+"\"");
+    }
     return -1f;
   }
   

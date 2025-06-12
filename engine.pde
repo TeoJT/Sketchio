@@ -3473,6 +3473,10 @@ public class TWEngine {
       return framesPerBeat;
     }
     
+    public float framesPerQuarter() {
+      return framesPerBeat()/4f;
+    }
+    
     public float beatSaw(int beatoffset, int everyxbeat) {
       return beatSaw(beatoffset, 0, everyxbeat);
     }
