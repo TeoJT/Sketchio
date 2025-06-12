@@ -71,15 +71,23 @@ public class Explorer extends Screen {
     
     app.textFont(engine.DEFAULT_FONT, 50);
     app.textSize(TEXT_SIZE);
+    
+    float y = 150 + input.scrollOffset;
+    
     for (int i = 0; i < file.currentFiles.length; i++) {
       float textHeight = app.textAscent() + app.textDescent();
       float x = 50;
       float wi = TEXT_SIZE + 20;
-      float y = 150 + i*TEXT_SIZE+input.scrollOffset;
       
       // Sorry not sorry
       try {
         if (file.currentFiles[i] != null) {
+          
+          // Super hacky thing to only display folders and sketchio files.
+          if (!file.currentFiles[i].fileext.equals(engine.SKETCHIO_EXTENSION) && !file.currentFiles[i].isDirectory()) {
+            continue;
+          }
+          
           if (!engine.inputPromptShown && engine.mouseX() > x && engine.mouseX() < x + app.textWidth(file.currentFiles[i].filename) + wi && engine.mouseY() > y && engine.mouseY() < textHeight + y) {
             // if mouse is overing over text, change the color of the text
             app.fill(100, 0, 255);
@@ -109,9 +117,11 @@ public class Explorer extends Screen {
       catch (NullPointerException ex) {
         
       }
+      
+      y += TEXT_SIZE;
     }
     
-    scrollBottom = max(0, (file.currentFiles.length*TEXT_SIZE-HEIGHT+BOTTOM_SCROLL_EXTEND));
+    scrollBottom = max(0, (y+BOTTOM_SCROLL_EXTEND));
   }
     
   
@@ -217,7 +227,7 @@ public class Explorer extends Screen {
   public void lowerBar() {
     display.shader("fabric", "color", 0.5,0.5,0.5,1., "intensity", 0.1);
     super.lowerBar();
-    display.defaultShader();
+    display.resetShader();
   }
     
   

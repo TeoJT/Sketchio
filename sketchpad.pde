@@ -661,7 +661,8 @@ public class Sketchpad extends Screen {
   private String code = "";
   private AtomicBoolean compiling = new AtomicBoolean(false);
   private AtomicBoolean successful = new AtomicBoolean(false);
-  private AtomicBoolean once = new AtomicBoolean(true);
+  private boolean runtimeCrash = false;
+  private AtomicBoolean once = new AtomicBoolean(false);
   private SpriteSystemPlaceholder sprites;
   private SpriteSystemPlaceholder gui;
   private PGraphics canvas;
@@ -1097,6 +1098,7 @@ public class Sketchpad extends Screen {
         successful.set(plugin.compile(code));
         compiling.set(false);
         once.set(true);
+        runtimeCrash = false;
       }
     });
     t1.start();
@@ -1165,7 +1167,10 @@ public class Sketchpad extends Screen {
   }
   
   public boolean codeOK() {
-    return (successful.get() && !compiling.get() && !loading.get());
+    //console.log("loading "+!loading.get());
+    //console.log("compiling "+!compiling.get());
+    //console.log("successful "+successful.get());
+    return (successful.get() && !compiling.get() && !loading.get() && !runtimeCrash);
   }
   
   private void addAutomationBarToDisplay(AutomationBar bar) {
@@ -1242,7 +1247,12 @@ public class Sketchpad extends Screen {
       pause();
     }
     else {
-      play();
+      if (codeOK()) {
+        play();
+      }
+      else {
+        console.log("Please fix code errors first!");
+      }
     }
   }
   
@@ -1288,7 +1298,7 @@ public class Sketchpad extends Screen {
     }
     
     boolean menuShown = menuShown();
-    if ((lastSelectedPane == CANVAS_PANE || !codeEditorShown()) && input.keyActionOnce("playPause") && !menuShown) {
+    if ((lastSelectedPane == CANVAS_PANE || !codeEditorShown()) && input.keyActionOnce("playPause", ' ') && !menuShown) {
        togglePlay();
        input.backspace();   // Don't want the unintended space.
     }
@@ -1458,7 +1468,7 @@ public class Sketchpad extends Screen {
   
   
   public void showError() {
-    if (errorHeight < 40f) return;
+    //if (errorHeight < 40f) return;
     
     app.fill(255, 200, 200);
     app.noStroke();
@@ -1861,6 +1871,18 @@ public class Sketchpad extends Screen {
     }
   }
   
+  public void showError(String mssg) {
+    errorLog = mssg;
+    app.textSize(20);
+    errorHeight = getTextHeight(errorLog);
+    if (errorHeight < 40f) {
+      errorLog += "\n\n";
+      errorHeight = getTextHeight(errorLog);
+    }
+    errorMenu = true;
+    pause();
+  }
+  
   /////////////////////////////////////////////////
   // TEXT FIELD CLASS
   /////////////////////////////////////////////////
@@ -2085,11 +2107,7 @@ public class Sketchpad extends Screen {
     // Display compilation status
     if (!compiling.get() && once.compareAndSet(true, false)) {
       if (!successful.get()) {
-        errorLog = plugin.errorOutput;
-        app.textSize(20);
-        errorHeight = getTextHeight(errorLog);
-        errorMenu = true;
-        pause();
+        showError(plugin.errorOutput);
       }
       else {
         errorMenu = false;
@@ -2111,7 +2129,14 @@ public class Sketchpad extends Screen {
       canvas.beginDraw();
       canvas.fill(255, 255);
       display.setPGraphics(canvas);
-      plugin.run();
+      
+      boolean runok = plugin.run();
+      
+      if (!runok) {
+        runtimeCrash = true;
+        showError(plugin.exceptionMessage);
+      }
+      
       canvas.endDraw();
     }
     
@@ -2152,7 +2177,7 @@ public class Sketchpad extends Screen {
     }
     
     // The actual part where we render our animation
-    if (rendering && !converting && successful.get() && !compiling.get()) {
+    if (rendering && !converting && codeOK()) {
       // This path has already been created so it will DEFO work
       String frame = engine.APPPATH+"frames/"+nf(renderFrameCount++, 6, 0)+".tiff";
       
@@ -2170,6 +2195,11 @@ public class Sketchpad extends Screen {
         shaderCanvas.save(frame);
       }
       
+    }
+    
+    if (rendering && runtimeCrash) {
+      console.warn("Runtime crash while rendering.");
+      exitRendering();
     }
     
     // Update time
@@ -2293,6 +2323,7 @@ public class Sketchpad extends Screen {
       
       // Show error output.
       if (errorMenu) {
+        //console.log("Error");
         showError();
       }
       
@@ -2323,9 +2354,7 @@ public class Sketchpad extends Screen {
   private void cancelRendering() {
     sound.playSound("select_smaller");
     pause();
-    rendering = false;
-    converting = false;
-    power.allowMinimizedMode = true;
+    exitRendering();
     console.log("Rendering cancelled.");
   }
   
@@ -2676,10 +2705,7 @@ public class Sketchpad extends Screen {
           file.open(engine.APPPATH+"output/");
           sound.playSound("render_finish_ding");
         }
-        
-        rendering = false;
-        converting = false;
-        power.allowMinimizedMode = true;
+        exitRendering();
       }
     };
     
@@ -2690,6 +2716,12 @@ public class Sketchpad extends Screen {
     if (ffmpegWorker != null) {
       ffmpegWorker.cancel(true);
     }
+  }
+  
+  private void exitRendering() {
+    rendering = false;
+    converting = false;
+    power.allowMinimizedMode = true;
   }
   
   
@@ -2864,8 +2896,8 @@ public class Sketchpad extends Screen {
   //////////////////////////////////////
   // FINALIZATION
   
-  public void finalize() {
-    //free();
+  public void endScreenAnimation() {
+    free();
   }
   
   public void free() {
@@ -2874,5 +2906,6 @@ public class Sketchpad extends Screen {
        display.systemImages.remove(s);
      }
      imagesInSketch.clear();
+     System.gc();
   }
 }

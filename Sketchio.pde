@@ -225,6 +225,11 @@ void twengineRequestBenchmarks() {
   //timewayEngine.requestScreen(new Benchmark(this));
 }
 
+@SuppressWarnings("unused")
+void twengineRequestReadonlyEditor(String path) {
+  
+}
+
 //@SuppressWarnings("unused")
 boolean hasPixelrealm() {
   return false;
