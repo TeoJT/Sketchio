@@ -1,7 +1,7 @@
 // How to enable Desktop mode in your code:
 // ctrl+a
 // ctrl+/
-// Yes. That's really now you do it.
+// Yes. That's really how you do it.
 // Make sure to do it to zAndroid too.
 
 
@@ -24,6 +24,9 @@ import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.AudioFileFormat;
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
+import java.awt.datatransfer.Transferable;
+import java.awt.Image;
+
 
 
 // Sometimes it can be called if it's exclusive to android, and no action happens in Java mode.
@@ -59,6 +62,7 @@ public String sketchPath() {
 
 protected PSurface initSurface() {
     PSurface s = super.initSurface();
+    s.setResizable(true);
     
     // Windows is annoying with maximised screens
     // So let's do this hack to make the screen maximised.
@@ -77,11 +81,10 @@ protected PSurface initSurface() {
         catch (Exception e) {
           sketch_openErrorLog(
               "Maximise error. This is a bug."
-          );
+              );
         }
       }
     }
-    s.setResizable(true);
     return s;
 }
 
@@ -151,6 +154,57 @@ public void copyStringToClipboard(String s) {
   clipboard.setContents(stringSelection, null);
 }
 
+ private class TransferableImage implements Transferable {
+
+        Image i;
+
+        public TransferableImage( Image i ) {
+            this.i = i;
+        }
+
+        public Object getTransferData( DataFlavor flavor )
+        throws UnsupportedFlavorException, IOException {
+            if ( flavor.equals( DataFlavor.imageFlavor ) && i != null ) {
+                return i;
+            }
+            else {
+                throw new UnsupportedFlavorException( flavor );
+            }
+        }
+
+        public DataFlavor[] getTransferDataFlavors() {
+            DataFlavor[] flavors = new DataFlavor[ 1 ];
+            flavors[ 0 ] = DataFlavor.imageFlavor;
+            return flavors;
+        }
+
+        public boolean isDataFlavorSupported( DataFlavor flavor ) {
+            DataFlavor[] flavors = getTransferDataFlavors();
+            for ( int i = 0; i < flavors.length; i++ ) {
+                if ( flavor.equals( flavors[ i ] ) ) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    }
+
+public void copyImageToClipboard(PImage img) {
+  Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+  BufferedImage bufferedImage = new BufferedImage(img.width, img.height, BufferedImage.TYPE_INT_ARGB);
+  
+  img.loadPixels();
+  for (int y = 0; y < img.height; y++) {
+    for (int x = 0; x < img.width; x++) {
+      bufferedImage.setRGB(x, y, img.pixels[y * img.width + x]);
+    }
+  }
+  
+  TransferableImage transferableImage = new TransferableImage( bufferedImage );
+  clipboard.setContents(transferableImage, null);
+}
+
 
 public void desktopOpen(String file) {
   if (Desktop.isDesktopSupported()) {
@@ -162,8 +216,7 @@ public void desktopOpen(String file) {
         desktop.open(myFile);
       }
       catch (IllegalArgumentException fileNotFound) {
-        //timewayEngine.console.log("This file or dir no longer exists!");
-        timewayEngine.console.warn(fileNotFound.getMessage());
+        timewayEngine.console.log("This file or dir no longer exists!");
         timewayEngine.file.refreshDir();
       }
     } 
@@ -189,7 +242,7 @@ public void openErrorLog() {
 }
 
 public void minimalErrorDialog(String mssg) {
-  JOptionPane.showMessageDialog(null,mssg,"Timeway" ,1);
+  JOptionPane.showMessageDialog(null, mssg, "Timeway", 1);
 }
 
 public void requestAndroidPermissions() {
@@ -215,13 +268,11 @@ public String getAndroidWriteableDir() {
 
 
 //public PImage getDCaptureImage(DSCapture capture) {
-    //PImage img = createImage(capture.getDisplaySize().width, capture.getDisplaySize().height, RGB);
-    //BufferedImage bimg = capture.getImage();
-    //bimg.getRGB(0, 0, img.width, img.height, img.pixels, 0, img.width);
-    //img.updatePixels();
-    //return img;
-//    timewayEngine.console.bugWarn("getDCaptureImage just returns null");
-//    return null;
+//    PImage img = createImage(capture.getDisplaySize().width, capture.getDisplaySize().height, RGB);
+//    BufferedImage bimg = capture.getImage();
+//    bimg.getRGB(0, 0, img.width, img.height, img.pixels, 0, img.width);
+//    img.updatePixels();
+//    return img;
 //}
 
 //public int getDCaptureWidth(DSCapture capture) {
@@ -261,10 +312,10 @@ public class AndroidMedia {
   public void loop() {
   }
   
-  public void pause() {
+  public void stop() {
   }
   
-  public void stop() {
+  public void pause() { 
   }
   
   @SuppressWarnings("unused")

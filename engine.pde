@@ -54,7 +54,7 @@ import java.util.concurrent.TimeUnit;
 public class TWEngine {
   //*****************CONSTANTS SETTINGS**************************
   // Info and versioning
-  private static final String VERSION     = "0.1.6";
+  private static final String VERSION     = "0.1.8";
   
   public String getAppName() {
     return "Timeway";
@@ -458,7 +458,7 @@ public class TWEngine {
     
     PowerMode prevPowerMode = PowerMode.HIGH;
     int recoveryFrameCount = 0;
-    int graceTimer = 0;
+    float graceTimer = 0f;
     int recoveryPhase = 1;
     float framerateBuffer[];
     private boolean forcePowerModeEnabled = false;
@@ -478,7 +478,7 @@ public class TWEngine {
   
     // If we gradually manage to make it to that score, we can go into RECOVERY mode to test what the framerate's like
     // up a level.
-    private final float FPS_SCORE_RECOVERY = 500.;
+    private final float FPS_SCORE_RECOVERY = 200.;
   
     // We want to recover to a higher framerate only if we're able to achieve a pretty good framerate.
     // The higher you make RECOVERY_NEGLIGENCE, the more it will neglect the possibility of recovery.
@@ -486,8 +486,8 @@ public class TWEngine {
     // RECOVERY_NEGLIGENCE is set to 1 but very unlikely if it's set to something higher like 5.
     private final float RECOVERY_NEGLIGENCE = 1;
     
-    private final int RECOVERY_PHASE_1_FRAMES = 20;
-    private final int RECOVERY_PHASE_2_FRAMES = 120;   // 2 seconds
+    private final int RECOVERY_PHASE_1_FRAMES = 10;
+    private final int RECOVERY_PHASE_2_FRAMES = 60;   // 1 second
     
     public PowerModeModule() {
       setForcedPowerMode(settings.getString("force_power_mode", "AUTO"));
@@ -623,19 +623,19 @@ public class TWEngine {
         powerMode = m;
         switch (m) {
         case HIGH:
-          frameRate(60);
+          app.frameRate(60);
           //console.log("Power mode HIGH");
           break;
         case NORMAL:
-          frameRate(30);
+          app.frameRate(30);
           //console.log("Power mode NORMAL");
           break;
         case SLEEPY:
-          frameRate(10);
+          app.frameRate(10);
           //console.log("Power mode SLEEPY");
           break;
         case MINIMAL:
-          frameRate(2); //idk for now
+          app.frameRate(2); //idk for now
           //console.log("Power mode MINIMAL");
           break;
         }
@@ -656,7 +656,7 @@ public class TWEngine {
     // We basically are telling the fps system to pause its score tracking as the average framerate drops.
     public void putFPSSystemIntoGraceMode() {
       fpsTrackingMode = GRACE;
-      graceTimer = 0;
+      graceTimer = 0f;
     }
   
     // Similar to putFPSSystemIntoGraceMode() but reset the score.
@@ -690,7 +690,8 @@ public class TWEngine {
       // 
       // Go into 1fps mode
   
-      // If the window is not focussed, don't even bother doing anything lol.
+      // If the window is not focused, don't even bother doing anything lol.
+      
       
       if (app.focused) {
         if (!focusedMode) {
@@ -756,7 +757,7 @@ public class TWEngine {
          - Don't keep track of score.
          - Use the real-time fps to take a small average of the current frame.
          - Once the average buffer is filled, use the average fps to determine whether we stay in this power mode or drop back.
-         - Framerate at least 58, 28 etc, stay in this mode and go back into monitor mode, and reset the score to the stable threshold.
+         - Framerate at least 58, 28 etc, stay in this FPS setting and go back into monitor mode, and reset the score to the stable threshold.
          - Otherwise, update recovery likelyhood and drop back.
          SLEEPY:
          - If sleepy mode is enabled, the score is paused and we don't do any operations;
@@ -767,19 +768,15 @@ public class TWEngine {
          */
     
         float stableFPS = 30.;
-        int n = 1;
         switch (powerMode) {
         case HIGH:
           stableFPS = 57.;
-          n = 1;
           break;
         case NORMAL:
           stableFPS = 27;
-          n = 2;
           break;
         case SLEEPY:
           stableFPS = 13.;
-          n = 4;
           break;
           // We shouldn't need to come to this but hey, this is a 
           // switch statement.
@@ -787,30 +784,33 @@ public class TWEngine {
           stableFPS = 1.;
           break;
         }
+        
+        
     
         if (fpsTrackingMode == MONITOR) {
+          //console.log("MONITOR "+fpsScore);
           // Everything in monitor will take twice or 4 times long if the framerate is lower.
-          for (int i = 0; i < n; i++) {
             if (frameRate < stableFPS) {
               //console.log("Drain");
               scoreDrain += (stableFPS-frameRate)/stableFPS;
-              fpsScore -= scoreDrain;
+              fpsScore -= scoreDrain*display.getDelta();
               //console.log(str(scoreDrain*scoreDrain));
               //console.log(str(fpsScore));
-            } else {
+            } 
+            else {
               scoreDrain = 0.;
               // If in stable zone...
               if (fpsScore > FPS_SCORE_MIDDLE) {
                 //console.log("stable zone");
     
                 if (powerMode != PowerMode.HIGH)
-                  fpsScore += recoveryScore;
+                  fpsScore += recoveryScore*display.getDelta();
     
                 //console.log(str(recoveryScore));
               }
               // If in unstable zone...
               else {
-                fpsScore += UNSTABLE_CONSTANT;
+                fpsScore += UNSTABLE_CONSTANT*display.getDelta();
               }
             }
     
@@ -822,6 +822,7 @@ public class TWEngine {
               scoreDrain = 0.;
     
               // Set the power mode down a level.
+              //console.log("Low FPS score, drop down ("+fpsScore+")");
               switch (powerMode) {
               case HIGH:
                 setPowerMode(PowerMode.NORMAL);
@@ -854,22 +855,18 @@ public class TWEngine {
                 // We shouldn't reach this here, but if we do, cap the
                 // score.
                 fpsScore = FPS_SCORE_RECOVERY;
-                n = 1;
                 break;
               case NORMAL:
                 // Cap it out at 30fps when in power saver mode.
                 if (getPowerSaver()) {
                   fpsScore = FPS_SCORE_RECOVERY;
-                  n = 2;
                 }
                 else {
                   setPowerMode(PowerMode.HIGH);
-                  n = 1;
                 }
                 break;
               case SLEEPY:
                 setPowerMode(PowerMode.NORMAL);
-                n = 2;
                 break;
               case MINIMAL:
                 // This is not a power level we upgrade to.
@@ -882,11 +879,11 @@ public class TWEngine {
               fpsTrackingMode = RECOVERY;
               recoveryFrameCount = 0;
               // Record the next so and so frames.
-              framerateBuffer = new float[RECOVERY_PHASE_1_FRAMES/n];
+              framerateBuffer = new float[RECOVERY_PHASE_1_FRAMES];
               recoveryPhase = 1;
             }
-          }
         } else if (fpsTrackingMode == RECOVERY) {
+          //console.log("RECOVERY phase "+recoveryPhase);
           // Record the fps, as long as we're not waiting to go back into MONITOR mode.
           if (recoveryPhase != 3)
             framerateBuffer[recoveryFrameCount++] = display.getLiveFPS();
@@ -909,14 +906,14 @@ public class TWEngine {
               // Move on to phase 2 and get a little more data.
               recoveryPhase = 2;
               recoveryFrameCount = 0;
-              framerateBuffer = new float[RECOVERY_PHASE_2_FRAMES/n];
+              framerateBuffer = new float[RECOVERY_PHASE_2_FRAMES];
             }
     
             // If the framerate is at least the minimum stable fps.
             else if (recoveryPhase == 2 && avg >= stableFPS) {
               //console.log("Recovery phase 2");
               // Now wait a bit before going back to monitor.
-              graceTimer = 0;
+              graceTimer = 0f;
               recoveryFrameCount = 0;
               fpsTrackingMode = GRACE;
             }
@@ -947,14 +944,13 @@ public class TWEngine {
             }
           }
         } else if (fpsTrackingMode == SLEEPY) {
+          //console.log("SLEEPY");
         } else if (fpsTrackingMode == GRACE) {
-          graceTimer++;
-          if (graceTimer > (240/n))
+          //console.log("GRACE "+graceTimer);
+          graceTimer += display.getDelta();
+          if (graceTimer > 120f)
             fpsTrackingMode = MONITOR;
         }  
-        
-        //console.log(fpsScore);
-        //console.log(getPowerModeString());
     }
     
     public boolean getSleepyMode() {
@@ -1012,15 +1008,9 @@ public class TWEngine {
     private float selectBorderTime = 0.;
     public boolean showCPUBenchmarks = false;
     public PGraphics currentPG;
-    private boolean allAtOnce = false;
-    private PImage white;
-    private IntBuffer clearList;
-    private int clearListIndex = 0;
-    public boolean showMemUsage = false;
     public boolean phoneMode = false;
     
     public final float BASE_FRAMERATE = 60.;
-    public final int CLEARLIST_SIZE = 4096;
     private float delta = 0.;
     private float forcedDelta = -1f;
     public boolean wireframe;
@@ -1037,8 +1027,6 @@ public class TWEngine {
     public int IDLE_TIME   = 3;
     
     public int timeMode = LOGIC_TIME;
-    
-    private PGL pgl;
     
     class PShaderEntry {
       public PShaderEntry(PShader s, String p) {
@@ -1058,6 +1046,17 @@ public class TWEngine {
       }
       lastTime = time;
       timeMode = RENDER_TIME;
+    }
+    
+    public PImage getImg(String name) {
+      PImage img = systemImages.get(name);
+      if (img != null) {
+        return img;
+      }
+      else {
+        console.warnOnce("Image "+name+" doesn't exist.");
+        return errorImg;
+      }
     }
     
     public void recordLogicTime() {
@@ -1133,8 +1132,6 @@ public class TWEngine {
         
         console.info("init: width/height set to "+str(WIDTH)+", "+str(HEIGHT));
         
-        clearList = IntBuffer.allocate(CLEARLIST_SIZE);
-    
         generateErrorImg();
         generateErrorShader();
         currentPG = g;
@@ -1248,17 +1245,6 @@ public class TWEngine {
       }
     }
   
-    public PImage getImg(String name) {
-      if (systemImages.get(name) != null) {
-        return systemImages.get(name);
-      } else {
-        console.warnOnce("Image "+name+" doesn't exist.");
-        
-        // TODO: Make it actually return something.
-        return null;
-      }
-    }
-  
     public void resetShader() {
       app.resetShader();
     }
@@ -1277,10 +1263,6 @@ public class TWEngine {
       for (PShaderEntry s : sh.values()) {
         this.loadShader(s.filepath);
       }
-    }
-    
-    public void uploadAllAtOnce(boolean tf) {
-      allAtOnce = tf;
     }
     
     public void initShader(String name) {
@@ -1542,8 +1524,9 @@ public class TWEngine {
     }
   
     public void img(String name, float x, float y, float w, float h) {
-      if (systemImages.get(name) != null) {
-        img(systemImages.get(name), x, y, w, h);
+      PImage image = systemImages.get(name);
+      if (image != null) {
+        img(image, x, y, w, h);
       } else {
         recordRendererTime();
         currentPG.image(errorImg, x, y, w, h);
@@ -1555,7 +1538,7 @@ public class TWEngine {
     public void img(String name, float x, float y) {
       PImage image = systemImages.get(name);
       if (image != null) {
-        img(systemImages.get(name), x, y, image.width, image.height);
+        img(image, x, y, image.width, image.height);
       } else {
         recordRendererTime();
         currentPG.image(errorImg, x, y, errorImg.width, errorImg.height);
@@ -1599,35 +1582,6 @@ public class TWEngine {
       return (timeframe/float(thisFrameMillis-lastFrameMillis))*BASE_FRAMERATE;
     }
     
-    public void displayMemUsageBar() {
-      pushMatrix();
-      scale(getScale());
-      display.recordRendererTime();
-      long used = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory());
-      //float percentage = (float)used/(float)MAX_MEM_USAGE;
-      long total = Runtime.getRuntime().totalMemory();
-      float percentage = (float)used/(float)total;
-      noStroke();
-      
-      float y = 0;
-      
-      fill(0, 0, 0, 127);
-      rect(100, y+20, (WIDTH-200.), 50);
-      
-      if (percentage > 0.8) 
-        fill(255, 140, 20); // Low mem
-      else 
-        fill(50, 50, 255);  // Normal
-        
-        
-      rect(100, y+20, (WIDTH-200.)*percentage, 50);
-      fill(255);
-      textFont(DEFAULT_FONT, 30);
-      textAlign(LEFT, CENTER);
-      text("Mem: "+(used/1024)+" kb / "+(total/1024)+" kb", 105, y+45);
-      display.recordLogicTime();
-      popMatrix();
-    }
     
     public void displayScreens() {
       // Set the display scale; since I've been programming this with my Surface Book 2 at high density resolution,
@@ -1692,11 +1646,13 @@ public class TWEngine {
           // If we're just getting started, we need to get a feel for the framerate since we don't want to start
           // slow and choppy. Once we're done transitioning to the first (well, after the startup) screen, go into
           // FPS recovery mode.
-          if (initialScreen) {
-            initialScreen = false;
-            power.setPowerMode(PowerMode.NORMAL);
-            power.forceFPSRecoveryMode();
-          }
+          
+          // New note: NOPE, changing it down makes it choppy and laggy.
+          //if (initialScreen) {
+          //  initialScreen = false;
+          //  power.setPowerMode(PowerMode.NORMAL);
+          //  power.forceFPSRecoveryMode();
+          //}
           //prevScreen = null;
         }
       } else {
@@ -1706,19 +1662,6 @@ public class TWEngine {
     }
     
     public void update() {
-      
-      if (clearListIndex > 0) {
-        pgl = app.beginPGL();
-        clearList.rewind();
-        pgl.deleteTextures(clearListIndex, clearList);
-        clearList.rewind();
-        app.endPGL();
-        clearListIndex = 0;
-      }
-      
-      
-      
-      
       totalTimeMillis = thisFrameMillis-lastFrameMillis;
       lastFrameMillis = thisFrameMillis;
       thisFrameMillis = app.millis();
@@ -1755,10 +1698,7 @@ public class TWEngine {
       float t = getTimeSeconds();
       return t-floor(t);
     }
-    
-  
   }
-
 
 
 
@@ -1778,12 +1718,13 @@ public class TWEngine {
   public class UIModule {
     
     public float guiFade = 0;
-    public SpriteSystemPlaceholder currentSpritePlaceholderSystem;
+    public SpriteSystem currentSpritePlaceholderSystem;
     public boolean spriteSystemClickable = false;
     public MiniMenu currMinimenu = null;
+    public SpriteSystem dummySpriteSystem;
     
     // To be used by API.
-    public HashMap<String, SpriteSystemPlaceholder> spriteSystems;
+    public HashMap<String, SpriteSystem> spriteSystems;
     public boolean usingTWITSpriteSystem = false;
     
     
@@ -1794,7 +1735,7 @@ public class TWEngine {
     
     
     public class MiniMenu {
-        public SpriteSystemPlaceholder g;
+        public SpriteSystem g;
         public float x = 0., y = 0.;
         public float width = 0., height = 0.;
         public float yappear = 1.;
@@ -2152,6 +2093,10 @@ public class TWEngine {
       }
     }
     
+    public void display() {
+      displayMiniMenu();
+    }
+    
     
     ///////////////////////////////////////////////////////
     // CUSTOM SLIDERS
@@ -2309,6 +2254,7 @@ public class TWEngine {
       
       public void setVal(int val) {
         this.valFloat = (float)val;
+        valInt = round(valFloat);
       }
       
       @Override
@@ -2352,7 +2298,7 @@ public class TWEngine {
     }
 
   
-    public void useSpriteSystem(SpriteSystemPlaceholder system) {
+    public void useSpriteSystem(SpriteSystem system) {
       this.currentSpritePlaceholderSystem = system;
       this.spriteSystemClickable = true;
       this.guiFade = 255.;
@@ -2501,23 +2447,23 @@ public class TWEngine {
     
     public void addSpriteSystem(TWEngine engine, String name, String path) {
       if (spriteSystems == null) {
-        spriteSystems = new HashMap<String, SpriteSystemPlaceholder>();
+        spriteSystems = new HashMap<String, SpriteSystem>();
       }
-      spriteSystems.put(name, new SpriteSystemPlaceholder(engine, path));
+      spriteSystems.put(name, new SpriteSystem(engine, path));
     }
-        
-    public SpriteSystemPlaceholder getSpriteSystem(String name) {
+    
+    public SpriteSystem getSpriteSystem(String name) {
       if (!spriteSystems.containsKey(name)) {
         console.warn("Sprite system "+name+" doesn't exist!");
-        // TODO: Return a blank spritesystem so that we don't crash.
-        return null;
+        
+        return dummySpriteSystem;
       }
       else {
         return spriteSystems.get(name);
       }
     }
     
-    public SpriteSystemPlaceholder getInUseSpriteSystem() {
+    public SpriteSystem getInUseSpriteSystem() {
       if (currentSpritePlaceholderSystem == null) {
         // TODO: Return a blank spritesystem so that we don't crash.
         console.warn("No sprite system currently in use!");
@@ -2528,7 +2474,7 @@ public class TWEngine {
     
     public void updateSpriteSystems() {
       if (spriteSystems == null) return;
-      for (SpriteSystemPlaceholder system : spriteSystems.values()) {
+      for (SpriteSystem system : spriteSystems.values()) {
         system.updateSpriteSystem();
       }
     }
@@ -3093,7 +3039,7 @@ public class TWEngine {
               }
             }
             );
-            t1.setDaemon(true);
+            //t1.setDaemon(true);
             t1.start();
           }
         }
@@ -3234,6 +3180,7 @@ public class TWEngine {
     
     private float masterVolume = 1.;
     private float musicVolume = 1.;
+     
     
     public void setMasterVolume(float vol) {
       masterVolume = vol;
@@ -3259,6 +3206,9 @@ public class TWEngine {
         reloadMusicPath = path;
       }
       
+      // Crash avoidance
+      //if (crashAvoidance)
+      
       // We don't need to boot up gstreamer in android cus gstreamer doesn't exist in android.
       if (startupGStreamer && !isAndroid()) {
         //console.log("startup gstreamer");
@@ -3276,7 +3226,7 @@ public class TWEngine {
           }
         }
         );
-        t1.setDaemon(true);
+        //t1.setDaemon(true);
         t1.start();
         startupGStreamer = false;
       }
@@ -3293,7 +3243,7 @@ public class TWEngine {
             }
           }
           );
-          t1.setDaemon(true);
+          //t1.setDaemon(true);
           t1.start();
         //}
       }
@@ -3329,7 +3279,9 @@ public class TWEngine {
   
     public void stopMusic() {
       if (streamerMusic != null) {
-        streamerMusic.stop();
+        // We use pause instead of stop because stop can cause crashes
+        streamerMusic.pause();
+          
         streamerMusic = null;
       }
       if (streamerMusicFadeTo != null) {
@@ -3798,24 +3750,12 @@ public class TWEngine {
         }
       }
       
-      // Recycle bin
-      if (!exists(APPPATH+RECYCLE_BIN_INFO)) {
-        recycleJson = new JSONArray();
-      }
-      else {
-        try {
-          recycleJson = loadJSONArray(APPPATH+RECYCLE_BIN_INFO);
-        }
-        catch (RuntimeException e) {
-          console.warn("Something went wrong with loading recycling bin info: "+e.getMessage());
-          recycleJson = new JSONArray();
-        }
-      }
     }
     
     public final String RECYCLE_BIN_PATH = "recyclebin/";
     public final String RECYCLE_BIN_INFO = RECYCLE_BIN_PATH+"recycle.json";
     private JSONArray recycleJson = null;
+    public boolean recycleJsonLoaded = false;
     
     public boolean loading = false;
     public int MAX_DISPLAY_FILES = 2048; 
@@ -3877,6 +3817,10 @@ public class TWEngine {
         return false;
       }
       
+      if (!exists(getDir(newPlace))) {
+        mkdir(getDir(newPlace));
+      }
+      
       try {
         File of = new File(oldPlace);
         File nf = new File(newPlace);
@@ -3909,14 +3853,32 @@ public class TWEngine {
       }
     }
     
+    private void recycleBinCheck() {
+      // Recycle bin
+      if (!exists(APPPATH+RECYCLE_BIN_INFO)) {
+        recycleJson = new JSONArray();
+        mkdir(APPPATH+RECYCLE_BIN_PATH);
+      }
+      else if (!recycleJsonLoaded) {
+        try {
+          recycleJson = loadJSONArray(APPPATH+RECYCLE_BIN_INFO);
+        }
+        catch (RuntimeException e) {
+          console.warn("Something went wrong with loading recycling bin info: "+e.getMessage());
+          recycleJson = new JSONArray();
+        }
+      }
+      recycleJsonLoaded = true;
+    }
     
     public boolean recycle(String oldLocation) {
-      String newName = nf(random(0, 99999999), 8, 0);
+      //String newName = nf(random(0, 99999999), 8, 0);
+      String newName = getIsolatedFilename(oldLocation)+"."+getExt(oldLocation);
       while (exists(APPPATH+RECYCLE_BIN_PATH+newName)) {
-        newName = nf(random(0, 99999999), 8, 0);
+        newName = getIsolatedFilename(oldLocation)+"-"+nf(random(0, 99999999), 8, 0)+"."+getExt(oldLocation);
       }
       
-      mkdir(APPPATH+RECYCLE_BIN_PATH);
+      recycleBinCheck();
       
       if (!mv(oldLocation, APPPATH+RECYCLE_BIN_PATH+newName)) {
         console.warn("Could not recycle "+getFilename(oldLocation)+", maybe file permissions denied?");
@@ -3931,7 +3893,33 @@ public class TWEngine {
       return true;
     }
     
+    private ArrayList<String> getAttribListFromRecycle(String attribName) {
+      recycleBinCheck();
+      
+      ArrayList<String> returnList = new ArrayList<String>();
+      
+      for (int i = 0; i < recycleJson.size(); i++) {
+        JSONObject item = recycleJson.getJSONObject(i);
+        
+        if (file.exists(APPPATH+RECYCLE_BIN_PATH+item.getString("name", "?"))) {
+          returnList.add(item.getString(attribName, ""));
+        }
+      }
+      
+      return returnList;
+    }
+    
+    public ArrayList<String> getNameListFromRecycle() {
+      return getAttribListFromRecycle("name");
+    }
+    
+    public ArrayList<String> getOldLocationListFromRecycle() {
+      return getAttribListFromRecycle("old_location");
+    }
+    
     public boolean copy(String src, String dest) {
+      src = src.replaceAll("\\\\", "/");
+      dest = dest.replaceAll("\\\\", "/");
       //if (!exists(src)) {
       //  console.bugWarn("copy: "+src+" doesn't exist!");
       //  return false;
@@ -3981,6 +3969,16 @@ public class TWEngine {
           Path copied = Paths.get(dest);
           Path originalPath = (new File(src)).toPath();
           Files.copy(originalPath, copied, StandardCopyOption.REPLACE_EXISTING);
+          
+          // Recursive copy for directories
+          if (file.isDirectory(src)) {
+            File[] files = (new File(src)).listFiles();
+            for (File f : files) {
+              String fpath = f.getAbsolutePath();
+              boolean success = copy(fpath, file.directorify(dest)+file.getFilename(fpath));
+              if (!success) return false;
+            }
+          }
         }
         catch (IOException e) {
           console.warn(e.getMessage());
@@ -4073,6 +4071,7 @@ public class TWEngine {
   
     public String getDir(String path) {
       try {
+        path = path.replaceAll("\\\\", "/");
         String str = path.substring(0, path.lastIndexOf('/', path.length()-2));
         return str;
       }
@@ -4085,6 +4084,7 @@ public class TWEngine {
     // If there's no dir, returns the full path instead of nothing.
     public String getDirLegacy(String path) {
       try {
+        path = path.replaceAll("\\\\", "/");
         String str = path.substring(0, path.lastIndexOf('/', path.length()-2));
         return str;
       }
@@ -4099,6 +4099,7 @@ public class TWEngine {
     
     // TODO: optimise to be safe and for use with MacOS and Linux.
     public String getPrevDir(String dir) {
+      dir = dir.replaceAll("\\\\", "/");
       int i = dir.lastIndexOf("/", dir.length()-2);
       if (i == -1) {
         console.bugWarn("getPrevDir: At root dir, make sure to use atRootDir in your code!");
@@ -4178,6 +4179,8 @@ public class TWEngine {
     
     // Converts a path (created from getRelativeDir) back to absolute path given a starting path
     public String relativeToAbsolute(String start, String relative) {
+      start = start.replaceAll("\\\\", "/");
+      relative = relative.replaceAll("\\\\", "/");
       try {
         String path = start;
         // Turn into list
@@ -4204,6 +4207,7 @@ public class TWEngine {
     }
     
     public String directorify(String dir) {
+      dir = dir.replaceAll("\\\\", "/");
       if (dir.charAt(dir.length()-1) != '/')  dir += "/";
       return dir;
     }
@@ -4267,6 +4271,7 @@ public class TWEngine {
     }
   
     public String getFilename(String path) {
+      path = path.replaceAll("\\\\", "/");
       int index = path.lastIndexOf('/', path.length()-2);
       if (index != -1) {
         if (path.charAt(path.length()-1) == '/') {
@@ -4279,6 +4284,7 @@ public class TWEngine {
     
     // Returns filename without the extension.
     public String getIsolatedFilename(String path) {
+      path = path.replaceAll("\\\\", "/");
       int index = path.lastIndexOf('/', path.length()-2);
       String filenameWithExt = "";
       if (index != -1) {
@@ -4321,6 +4327,8 @@ public class TWEngine {
         return "unknown_128";
       case FILE_TYPE_IMAGE:
         return "image_128";
+      case FILE_TYPE_DIRECTORY:
+        return "folder_128";
       case FILE_TYPE_PDF:
         return "doc_128";
       case FILE_TYPE_VIDEO:
@@ -4345,6 +4353,8 @@ public class TWEngine {
     }
   
     public FileType extToType(String ext) {
+      if (ext.equals(".")) return FileType.FILE_TYPE_DIRECTORY;
+      
       if (ext.equals("png")
         || ext.equals("jpg")
         || ext.equals("jpeg")
@@ -5133,7 +5143,7 @@ public class TWEngine {
           traverse(path, 0);
         }
       });
-      t1.setDaemon(true);
+      //t1.setDaemon(true);
       t1.start();
     }
   }
@@ -5380,6 +5390,11 @@ public class TWEngine {
         
         // raw code -> java file
         String fullCode = pluginBoilerplateCode_1+code+pluginBoilerplateCode_2;
+        
+        //println("--------------- FULL CODE START ----------------");
+        //println(fullCode);
+        //println("--------------- FULL CODE END ----------------");
+        
         app.saveStrings(javaFileOut, fullCode.split("\n"));
         
         
@@ -5473,9 +5488,13 @@ public class TWEngine {
       
       if (isWindows()) {
         javacPath = javapath+"/bin/javac.exe";
+        
+        // Try Processing 4.4.5 path instead.
+        if (!file.exists(javacPath)) javacPath = exepath+"/app/resources/jdk/bin/javac.exe";
       }
       else {
         javacPath = javapath+"/bin/javac";
+        if (!file.exists(javacPath)) javacPath = exepath+"/app/resources/jdk/bin/javac";
       }
       
       // Find the processing core so we can use PApplet in our plugin.
@@ -5487,6 +5506,10 @@ public class TWEngine {
       // for exported builds
       else if (file.exists(exepath+"/lib/core.jar")) {
         processingCorePath = exepath+"/lib/core.jar";
+      }
+      // For Processing 4.4.5 and beyond
+      else if (file.exists(exepath+"/app/resources/core/library/core.jar")) {
+        processingCorePath = exepath+"/app/resources/core/lib/core.jar";
       }
       // Uhoh
       else {
@@ -5518,9 +5541,12 @@ public class TWEngine {
       
       if (isWindows()) {
         jarExePath = javapath+"/bin/jar.exe";
+        
+        if (!file.exists(jarExePath)) jarExePath = exepath+"/app/resources/jdk/bin/jar.exe";
       }
       else {
         jarExePath = javapath+"/bin/jar";
+        if (!file.exists(jarExePath)) jarExePath = exepath+"/app/resources/jdk/bin/jar";
       }
       
       // In our cachepath.
@@ -5685,13 +5711,6 @@ public class TWEngine {
         if (lastInput.length() > 0) {
           input.keyboardMessage = lastInput;
           input.cursorX = input.keyboardMessage.length();
-        }
-      }
-      
-      if (input.ctrlDown && input.keys[int('v')] == 2) {
-        //input.keyboardMessage = input.keyboardMessage.substring(0, input.keyboardMessage.length()-1);
-        if (clipboard.isString()) {
-          input.keyboardMessage += clipboard.getText();
         }
       }
       
@@ -5908,6 +5927,11 @@ public class TWEngine {
   // the cmd system is completely different, because we're essentially just calling
   // some java executables.
   public CmdOutput runExecutableCommand(String... cmd) {
+    for (String c : cmd) {
+      print(c + " ");
+    }
+    println();
+    
     try {
       // Run the OS command
       Process process = Runtime.getRuntime().exec(cmd);
@@ -6103,7 +6127,7 @@ public class TWEngine {
             }
           );
           updateError = "";
-          t1.setDaemon(true);
+          //t1.setDaemon(true);
           t1.start();
         }
         else {
@@ -6266,7 +6290,7 @@ public class TWEngine {
     );
     updateError = "";
     
-    t1.setDaemon(true);
+    //t1.setDaemon(true);
     t1.start();
   }
 
@@ -6412,8 +6436,8 @@ public class TWEngine {
       console.log("Shaders reloaded.");
     }
     else if (commandEquals(command, "/memusage")) {
-      display.showMemUsage = !display.showMemUsage;
-      if (display.showMemUsage) console.log("Memory usage bar shown.");
+      showMemUsage = !showMemUsage;
+      if (showMemUsage) console.log("Memory usage bar shown.");
       else console.log("Memory usage bar hidden.");
     }
     else if (commandEquals(command, "/sleepmode") || commandEquals(command, "/minimalmode") || commandEquals(command, "/minimizedmode")) {
@@ -7864,14 +7888,20 @@ public class TWEngine {
       else if (keyOnce) {}
       else solidifyBlink = false;
       
+      // Paste text
+      // If you're wondering, need to use keys['v'] == 2 since there's a special exception when there's input prompts.
+      if (input.ctrlDown && keys['v'] == 2 && clipboard.isString()) {
+        String insert = clipboard.getText();
+        this.keyboardMessage = keyboardMessage.substring(0, cursorX) + insert + keyboardMessage.substring(cursorX);
+        cursorX += insert.length();
+      }
+      
       if (solidifyBlink) {
         blinkTime = 0.0;
       }
       cursorX = max(min(cursorX, keyboardMessage.length()), 0);
     
       blinkTime += display.getDelta();
-    
-      
   
       //*************MOUSE WHEEL*************
       if (rawScroll != 0) {
@@ -7889,7 +7919,16 @@ public class TWEngine {
     }
     
     private boolean ctrlTraversable() {
-      if (cursorX >= keyboardMessage.length()-1 || cursorX <= 0 ) return false;
+      if (cursorX >= keyboardMessage.length()) {
+        return false;
+      }
+      else if (cursorX == 0) {
+        return true;
+      }
+      else if (cursorX < 0) {
+        cursorX = 0;
+        return false;
+      }
       char c = keyboardMessage.charAt(cursorX);
       return c != ' '
           && c != '\n'
@@ -7907,6 +7946,7 @@ public class TWEngine {
   
     // To be called by base sketch code.
     public void releaseKeyboardAction(char kkey, int kkeyCode) {
+      keyHoldCounter = 0;
       // Special keys
       if (kkey == CODED) {
         switch (kkeyCode) {
@@ -7951,6 +7991,11 @@ public class TWEngine {
       if (shiftDown) {
         actualKey = char(kkeyCode);
       }
+      
+      if (ctrlDown) {
+        actualKey = char(kkeyCode);
+      }
+      
       int val = int(Character.toLowerCase(actualKey));
       
       if (val >= 1024) return;
@@ -8051,8 +8096,29 @@ public class TWEngine {
         return keyDownOnce(k);
       }
     }
+    
+    private void backspace() {
+      backspaceOnce();
+      
+      if (ctrlDown) {
+        int prevCursorX = cursorX;
+        cursorX--;
+        
+        int backspacesCount = 0;
+        while (ctrlTraversable()) {
+          cursorX--;
+          backspacesCount++;
+        }
+               
+        cursorX = prevCursorX;
+        
+        for (int i = 0; i < backspacesCount; i++) {
+          backspaceOnce();
+        }
+      }
+    }
   
-    public void backspace() {
+    private void backspaceOnce() {
       if (this.keyboardMessage.length() > 0 && cursorX > 0)  {
         this.keyboardMessage = keyboardMessage.substring(0, cursorX-1)+keyboardMessage.substring(cursorX);
         cursorX--;
@@ -8108,6 +8174,20 @@ public class TWEngine {
         break;
         case CTRL_KEY:
         text = "Ctrl";
+        break;
+        
+        // TODO: This assumes user has a QWERTY keyboard.
+        case '.':
+        text = ">";
+        break;
+        case ',':
+        text = "<";
+        break;
+        case '\'':
+        text = "@";
+        break;
+        case '=':
+        text = "+";
         break;
         default:
         text = ""+Character.toUpperCase(c);
@@ -8187,11 +8267,12 @@ public class TWEngine {
       keyHoldCounter = 0.;
     }
     
+    
     public void keyboardAction(char kkey, int kkeyCode) {
       lastKeyPressed     = kkey;
       lastKeycodePressed = kkeyCode;
       
-      if (kkey == CODED) {
+      if (kkey == CODED || kkey == 8) {
         switch (kkeyCode) {
           case CONTROL:
             ctrlDown = true;
@@ -8225,22 +8306,25 @@ public class TWEngine {
             downDownCounter = 0;
             downDown = true;
             break;
-          case 67:
+          case BACKSPACE:
             this.backspace();
             backspaceDown = true;
-            return;
+            break;
+          case 77:  // Glitchy key which isn't supposed to do anything.
+            
         }
         // 10 for android
-      } else if (kkey == ENTER || kkey == RETURN || int(kkey) == 10) {
+      } else if ((kkey == ENTER || kkey == RETURN || int(kkey) == 10) && !ctrlDown) {
         if (this.addNewlineWhenEnterPressed) {
           insert('\n');
         }
         enterDown = true;
         // 65535 67 for android
-      } else if (kkey == BACKSPACE) {    // Backspace
-        this.backspace();
-        backspaceDown = true;
       }
+      //else if (kkey == BACKSPACE) {    // Backspace
+      //  this.backspace();
+      //  backspaceDown = true;
+      //}
       else {
         insert(kkey);
       }
@@ -8250,11 +8334,19 @@ public class TWEngine {
       if (shiftDown) {
         actualKey = char(kkeyCode);
       }
+      
+      // CTRL is weird in Processing and has some special cases.
+      if (ctrlDown) {
+        actualKey = char(kkeyCode);
+      }
+      
       int val = int(Character.toLowerCase(actualKey));
       
       if (val >= 1024) return;
       if (keys[val] > 0) return;
+      
       keys[val] = 1;
+      
       stats.increase("keys_pressed", 1);
     }
   
@@ -8315,7 +8407,7 @@ public class TWEngine {
     public PImage getImage() {
       if (!isImage()) {
         console.bugWarn("getImage: clipboard doesn't contain an image, make sure to check first with isImage()!");
-        return display.systemImages.get("white");
+        return display.getImg("white");
       }
       
       PImage ret = (PImage)cachedClipboardObject;
@@ -8332,6 +8424,18 @@ public class TWEngine {
       catch (RuntimeException e) {
         console.warn(e.getMessage());
         console.warn("Couldn't copy text to clipboard: ");
+        return false;
+      }
+      return true;
+    }
+    
+    public boolean copyImage(PImage img) {
+      try {
+        copyImageToClipboard(img);
+      }
+      catch (RuntimeException e) {
+        console.warn(e.getMessage());
+        console.warn("Couldn't copy image to clipboard: ");
         return false;
       }
       return true;
@@ -8358,7 +8462,7 @@ public class TWEngine {
   
   
   
-  
+  private long gcPanicCooldown = 1;
   
   public Screen getPrevScreen() {
     if (screenStack.isEmpty()) {
@@ -8374,6 +8478,121 @@ public class TWEngine {
       if (cacheInfoTimeout == 0) {
         saveCacheInfoNow();
       }
+    }
+  }
+  
+  private long usedMemValues[] = new long[400];;
+  private int usedMemValuesIndex = 0;
+  private boolean showMemUsage = false;
+  private long[] heapFillRateValues = new long[30];
+  private long lastUsedMemSize = 0;
+  private long heapFillDisplayKB = 0;
+  private long minimumMem = 0;
+  private long totalToKeepTrackOfMinimumMem = 0;
+  
+  public void memUsage() {
+    long used = (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory());
+    long total = Runtime.getRuntime().totalMemory();
+    
+    
+    if (showMemUsage) {
+      app.pushMatrix();
+      app.scale(display.getScale());
+      
+      
+      app.noStroke();
+      
+      float y = 20f;
+      float hi = 100f;
+      float wi = (display.WIDTH-200f);
+      
+      // Bar
+      app.fill(0, 0, 0, 127);
+      app.rect(100f, y, wi, hi);
+      
+      // Line graph
+      app.fill(255, 150);
+      int l = usedMemValues.length;
+      float xpw = wi / (float)l;
+      for (int i = 0; i < l-1; i++) {
+        float xp1 = 100f + ((float)i / (float)l) * wi;
+        float yp2 = min((((float)usedMemValues[(usedMemValuesIndex+i)%l] / (float)total)) * hi, hi);
+        rect(xp1, y+hi-yp2, xpw, yp2);
+        
+        // Lil red indicator bar
+        if (i == l-2) {
+          rect(xp1+xpw, y+hi-yp2, xpw, yp2);
+          fill(255, 0, 0);
+          rect(100f+wi-70f, y+hi-yp2-4f, 70f, 4f); 
+        }
+      }
+      
+      // Overall memory usage
+      app.fill(0);
+      app.textFont(DEFAULT_FONT, 30);
+      app.textAlign(LEFT, CENTER);
+      app.text("Mem: "+(used/1024L)+"KB / "+(total/1024)+"KB ("+(used/1048576L)+"MB / "+(total/1048576L)+"MB)", 106, y+26);
+      app.fill(255);
+      app.text("Mem: "+(used/1024L)+"KB / "+(total/1024)+"KB ("+(used/1048576L)+"MB / "+(total/1048576L)+"MB)", 104, y+24);
+      
+      // Heap fill rate
+      // Calculate average first
+      if (app.frameCount % 7 == 0) {
+        long sum = 0;
+        for (int i = 0; i < heapFillRateValues.length; i++) {
+          sum += heapFillRateValues[i];
+        }
+        long avg = sum / (long)heapFillRateValues.length;
+        
+        heapFillDisplayKB = avg;
+      }
+      
+      // Indicator of low lowMemory mode
+      if (lowMemory) {
+        app.textAlign(RIGHT, CENTER);
+        app.textFont(DEFAULT_FONT, 22);
+        app.fill(0);
+        app.text("Low memory mode enabled", wi, y+26);
+        app.fill(255, 100, 100);
+        app.text("Low memory mode enabled", wi, y+24);
+        app.textAlign(LEFT, CENTER);
+      }
+      
+      // Display heap fill rate
+      app.textFont(DEFAULT_FONT, 20);
+      app.fill(0);
+      app.text("Heap fill rate: "+(heapFillDisplayKB/1024L)+"KB/frame", 106, y+52);
+      app.fill(255);
+      app.text("Heap fill rate: "+(heapFillDisplayKB/1024L)+"KB/frame", 104, y+50);
+      
+      // Display minimum memory
+      app.fill(0);
+      app.text("Min required mem: "+(minimumMem/1048576L)+"MB", 106, y+70);
+      app.fill(255);
+      app.text("Min required mem: "+(minimumMem/1048576L)+"MB", 104, y+68);
+      
+      app.textFont(DEFAULT_FONT, 12);
+      app.fill(0);
+      app.text("Use the /gc command to refresh min required memory.", 106, y+90);
+      app.fill(255);
+      app.text("Use the /gc command to refresh min required memory.", 104, y+88);
+      
+      app.popMatrix();
+    }
+    
+    // Used mem array
+    usedMemValues[usedMemValuesIndex] = used;
+    usedMemValuesIndex++;
+    if (usedMemValuesIndex >= usedMemValues.length) usedMemValuesIndex = 0;
+    
+    // Memory heap fill rate
+    heapFillRateValues[app.frameCount % heapFillRateValues.length] = used-lastUsedMemSize < 0 ? 0 : used-lastUsedMemSize;
+    lastUsedMemSize = used;
+    
+    // Minimum memory
+    if (totalToKeepTrackOfMinimumMem != total) {
+      minimumMem = used;
+      totalToKeepTrackOfMinimumMem = total;
     }
   }
   
@@ -8403,6 +8622,8 @@ public class TWEngine {
   public void previousScreen() {
     if (currScreen != null) currScreen.previousScreen();
   }
+  
+  //int lagarrayyyy[] = new int[9999999];
 
   // The core engine function which essentially runs EVERYTHING in Timeway.
   // All the screens, all the input management, and everything else.
@@ -8414,44 +8635,54 @@ public class TWEngine {
     
     display.WIDTH = width/display.displayScale;
     display.HEIGHT = height/display.displayScale;
+    
+    // Incase you ever wanted to purposefully introduce lag.
+    //for (int i = 0; i < 550000; i++) {
+    //  lagarrayyyy[int(random(0, 9999999))] = int(random(0, 9999999));
+    //}
 
     power.updatePowerMode();
 
     processCaching();
     settings.update();
 
-    // Trully an awful piece of code.
+    // Truly an awful piece of code.
     //if ((int)app.frameCount % 2000 == 0) {
     //  stats.save();
     //}
 
-    if (display != null) display.recordRendererTime();
-    // This should be run at all times because apparently (for some stupid reason)
-    // it uses way more performance NOT to call background();
     app.background(0);
-    if (display != null) display.recordLogicTime();
 
     // Update inputs
     input.runInputManagement();
     
     // Get updates
-    processUpdate();
+    //processUpdate();
 
     // Show the current GUI.
     display.displayScreens();
     
     sound.processSound();
     
-    ui.displayMiniMenu();
+    // Dumb code
+    if (ui.dummySpriteSystem == null) ui.dummySpriteSystem = new SpriteSystem(this);
+    ui.display();
     
-    if (display.showMemUsage) {
-      display.displayMemUsageBar();
+    if (showMemUsage) {
+      memUsage();
     }
     
     if (lowMemory) {
       // If the memory is past its 512mb limit, call the garbage collector. Get that mem usage down.
+      // If there's no effect, slow down the number of times we call gc() so that we don't lag the system to a crawl.
       if (Runtime.getRuntime().totalMemory() > 536870912l) {
-        System.gc();
+        if ((long)app.frameCount % gcPanicCooldown == 0l) {
+          System.gc();
+          gcPanicCooldown *= 2l;
+        }
+      }
+      else {
+        gcPanicCooldown = 1l;
       }
     }
     
@@ -8490,15 +8721,16 @@ public class TWEngine {
       app.scale(display.getScale());
       app.textFont(DEFAULT_FONT, 32);
       app.textAlign(LEFT, TOP);
-      float y = 5;
-      if (currScreen != null) y = currScreen.myUpperBarWeight+5;
+      float y = 5f;
+      float x = 5f;
+      if (currScreen != null) y = currScreen.myUpperBarWeight+5f;
       
       String txt = str(round(frameRate))+"\n"+power.getPowerModeString();
       
       app.fill(0);
-      app.text(txt, 5, y);
+      app.text(txt, x, y);
       app.fill(255);
-      app.text(txt, 7, y+2);
+      app.text(txt, x+2, y+2);
       app.popMatrix();
     }
 
@@ -8754,15 +8986,16 @@ public class DummyScreen extends Screen {
 //*********************Sprite Class****************************
 // Now yes, I am aware that the code is a mess and there are many
 // features inside of this class that go unused. This was ripped
-// straight from SketchiePad. This is mainly placeholder code as
-// to be able to have click+draggable objects.
+// straight from SketchiePad. 
+// UPDATE 2025: This is no longer placeholder code lmao. It's
+// official code that's here to stay.
 // Its functionalities:
 // 1. Create sprites simply by calling the sprite() method
 // 2. Click and drag objects
 // 3. Resize objects
 // 4. Save the position of objects between closing and starting again
 // 5. Move objects with code, but still allow the position to be updated when clicked+dragged.
-public final class SpriteSystemPlaceholder {
+public final class SpriteSystem {
         public HashMap<String, Integer> spriteNames;
         public ArrayList<Sprite> sprites;
         public Sprite selectedSprite;
@@ -8817,13 +9050,13 @@ public final class SpriteSystemPlaceholder {
         }
 
         // Use this constructor for no saving sprite data.
-        public SpriteSystemPlaceholder(TWEngine engine) {
+        public SpriteSystem(TWEngine engine) {
             this(engine, "");
             saveSpriteData = false;
         } 
 
         // Default constructor.
-        public SpriteSystemPlaceholder(TWEngine engine, String path) {
+        public SpriteSystem(TWEngine engine, String path) {
             this.engine = engine;
             spriteNames = new HashMap<String, Integer>();
             selectedSprites = new Stack<Sprite>(256);
@@ -9472,8 +9705,8 @@ public final class SpriteSystemPlaceholder {
                     this.hoveringOverResizeSquare = false;
                     }
                     if (resizeDrag.isDragging()) {
-                    wi = int((mouseX()+d/2-xpos));
-                    hi = int((mouseX()+d/2-xpos)*aspect);
+                    wi = int(max(mouseX()+d/2-xpos, BOX_SIZE));
+                    hi = int((float)wi*aspect);
                     
                     defwi = wi-offwi;
                     defhi = hi-offhi;
@@ -9511,10 +9744,10 @@ public final class SpriteSystemPlaceholder {
                     
                     if (resizeDrag.isDragging()) {
                       if (currentVertex == 1) {
-                        wi = int((mouseX()+d/2-xpos));
+                        wi = int(max(mouseX()+d/2-xpos, BOX_SIZE));
                       }
                       else if (currentVertex == 2) {
-                        hi = int((mouseY()+d/2-ypos));
+                        hi = int(max(mouseY()+d/2-ypos, BOX_SIZE));
                       }
                       
                       defwi = wi-offwi;
@@ -10151,6 +10384,7 @@ public enum PowerMode {
 public enum FileType {
   FILE_TYPE_UNKNOWN, 
     FILE_TYPE_IMAGE, 
+    FILE_TYPE_DIRECTORY, 
     FILE_TYPE_PDF,
     FILE_TYPE_VIDEO, 
     FILE_TYPE_MUSIC, 

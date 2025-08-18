@@ -745,8 +745,8 @@ public class Sketchpad extends Screen {
   private AtomicBoolean successful = new AtomicBoolean(false);
   private boolean runtimeCrash = false;
   private AtomicBoolean once = new AtomicBoolean(false);
-  private SpriteSystemPlaceholder sprites;
-  private SpriteSystemPlaceholder gui;
+  private SpriteSystem sprites;
+  private SpriteSystem gui;
   private PGraphics canvas;
   private float canvasScale = 1.0;
   private float canvasX = 0.0;
@@ -834,7 +834,7 @@ public class Sketchpad extends Screen {
     super(engine);
     myUpperBarWeight = 100.;
     
-    gui = new SpriteSystemPlaceholder(engine, engine.APPPATH+engine.PATH_SPRITES_ATTRIB()+"gui/sketchpad/");
+    gui = new SpriteSystem(engine, engine.APPPATH+engine.PATH_SPRITES_ATTRIB()+"gui/sketchpad/");
     gui.interactable = false;
     
     
@@ -1138,7 +1138,7 @@ public class Sketchpad extends Screen {
     // If sprites exist.
     if (spritePath.length() > 0) {
       // Load our new sprite system, EZ.
-      sprites = new SpriteSystemPlaceholder(engine, spritePath);
+      sprites = new SpriteSystem(engine, spritePath);
       sprites.interactable = true;
     }
     
@@ -2060,7 +2060,7 @@ public class Sketchpad extends Screen {
     actions[0] = new Runnable() {
       public void run() {
         if (sprites.selectedSprite != null) {
-          SpriteSystemPlaceholder.Sprite s = sprites.selectedSprite;
+          SpriteSystem.Sprite s = sprites.selectedSprite;
           sprites.selectedSprite.mode = sprites.SINGLE;
           if (s.getX() > canvas.width || s.getX() < -s.getWidth() || s.getY() > canvas.height || s.getY() < -s.getHeight()) {
             s.setX(0);
@@ -2074,7 +2074,7 @@ public class Sketchpad extends Screen {
     actions[1] = new Runnable() {
       public void run() {
         if (sprites.selectedSprite != null) {
-          SpriteSystemPlaceholder.Sprite s = sprites.selectedSprite;
+          SpriteSystem.Sprite s = sprites.selectedSprite;
           sprites.selectedSprite.mode = sprites.DOUBLE;
           if (s.getX() > canvas.width || s.getX() < -s.getWidth() || s.getY() > canvas.height || s.getY() < -s.getHeight()) {
             s.setX(0);
@@ -2088,7 +2088,7 @@ public class Sketchpad extends Screen {
     actions[2] = new Runnable() {
       public void run() {
         if (sprites.selectedSprite != null) {
-          SpriteSystemPlaceholder.Sprite s = sprites.selectedSprite;
+          SpriteSystem.Sprite s = sprites.selectedSprite;
           if (s.getX() > canvas.width || s.getX() < -s.getWidth() || s.getY() > canvas.height || s.getY() < -s.getHeight()) {
             s.setX(0);
             s.setY(0);
