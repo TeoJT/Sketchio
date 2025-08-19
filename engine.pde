@@ -676,32 +676,34 @@ public class TWEngine {
       powerModeSetTimeout = max(0, powerModeSetTimeout-1);
   
       // Rules:
-      // If plugged in or no battery, have it running at POWER_MODE_HIGH by default.
-      // If on battery, the rules are as follows:
       // - POWER_MODE_HIGH    60fps
       // - POWER_MODE_NORMAL  30fps
       // - POWER_MODE_SLEEPY  15 fps
       // - POWER_MODE_MINIMAL loop is turned off
   
-      // - POWER_MODE_HIGH if power is above 30% and average fps over 2 seconds is over 58
+      // - POWER_MODE_HIGH if average fps over 2 seconds is over 58
       // - POWER_MODE_NORMAL stays in 
-      // - POWER_MODE_SLEEPY if 30% or below and window isn't focussed
+      // - POWER_MODE_SLEEPY is used manually by screens when there isn't much movement on screen and shouldn't be used as an FPS setting
       // - POWER_MODE_MINIMAL if minimised
       // 
       // Go into 1fps mode
+      
   
       // If the window is not focused, don't even bother doing anything lol.
       
       
       if (app.focused) {
         if (!focusedMode) {
+          // Move out of minimized mode and continue normal power mode operation
           setPowerMode(prevPowerMode);
           focusedMode = true;
           putFPSSystemIntoGraceMode();
           sound.setNormalVolume();
+          input.accidentalClickPrevention();
         }
       } else if (allowMinimizedMode) {
         if (focusedMode) {
+          // Window is not focussed, move out of normal operation and go into minimized mode, saving power
           prevPowerMode = powerMode;
           setPowerMode(PowerMode.MINIMAL);
           focusedMode = false;
@@ -5509,7 +5511,7 @@ public class TWEngine {
       }
       // For Processing 4.4.5 and beyond
       else if (file.exists(exepath+"/app/resources/core/library/core.jar")) {
-        processingCorePath = exepath+"/app/resources/core/lib/core.jar";
+        processingCorePath = exepath+"/app/resources/core/library/core.jar";
       }
       // Uhoh
       else {
@@ -5692,15 +5694,17 @@ public class TWEngine {
 
 
   public Runnable doWhenPromptSubmitted = null;
-  public String promptText;
+  private String promptText;
+  public String promptInput;
   public boolean inputPromptShown = false;
   public String lastInput = "";
 
   public void beginInputPrompt(String prompt, Runnable doWhenSubmitted) {
-    input.prepareTyping();
+    input.cursorX = 0;
     inputPromptShown = true;
     input.addNewlineWhenEnterPressed = false;
     promptText = prompt;
+    promptInput = "";
     doWhenPromptSubmitted = doWhenSubmitted;
     openTouchKeyboard();
   }
@@ -5709,10 +5713,12 @@ public class TWEngine {
     if (inputPromptShown) {
       if (input.upOnce) {
         if (lastInput.length() > 0) {
-          input.keyboardMessage = lastInput;
-          input.cursorX = input.keyboardMessage.length();
+          promptInput = lastInput;
+          input.cursorX = promptInput.length();
         }
       }
+      
+      promptInput = input.getTyping(promptInput);
       
       float buttonwi = 200;
       boolean button = ui.basicButton("Enter", display.WIDTH/2-buttonwi/2, display.HEIGHT/2+50, buttonwi, 50f);
@@ -5721,12 +5727,12 @@ public class TWEngine {
         inputPromptShown = false;
         //if (input.keyboardMessage.length() <= 0) return;
         // Remove enter character at end
-        if (input.keyboardMessage.length() > 0) {
-          int ll = max(input.keyboardMessage.length()-1, 0);   // Don't allow it to go lower than 0
-          if (input.keyboardMessage.charAt(ll) == '\n') input.keyboardMessage = input.keyboardMessage.substring(0, ll);
+        if (promptInput.length() > 0) {
+          int ll = max(promptInput.length()-1, 0);   // Don't allow it to go lower than 0
+          if (promptInput.charAt(ll) == '\n') promptInput = promptInput.substring(0, ll);
         }
         doWhenPromptSubmitted.run();
-        lastInput = input.keyboardMessage;
+        lastInput = promptInput;
         closeTouchKeyboard();
       }
       
@@ -5738,7 +5744,7 @@ public class TWEngine {
       app.textFont(DEFAULT_FONT, 60);
       app.text(promptText, display.WIDTH/2, display.HEIGHT/2-100);
       app.textSize(30);
-      app.text(input.keyboardMessageDisplay(), display.WIDTH/2, display.HEIGHT/2);
+      app.text(input.keyboardMessageDisplay(promptInput), display.WIDTH/2, display.HEIGHT/2);
     }
   }
 
@@ -5927,10 +5933,10 @@ public class TWEngine {
   // the cmd system is completely different, because we're essentially just calling
   // some java executables.
   public CmdOutput runExecutableCommand(String... cmd) {
-    for (String c : cmd) {
-      print(c + " ");
-    }
-    println();
+    //for (String c : cmd) {
+    //  print(c + " ");
+    //}
+    //println();
     
     try {
       // Run the OS command
@@ -6302,13 +6308,13 @@ public class TWEngine {
     Runnable r = new Runnable() {
       public void run() {
         commandPromptShown = false;
-        runCommand(input.keyboardMessage);
+        runCommand(promptInput);
       }
     };
 
     beginInputPrompt("Enter command", r);
-    input.keyboardMessage = "/";
-    input.cursorX = input.keyboardMessage.length();
+    promptInput = "/";
+    input.cursorX = promptInput.length();
   }
 
   private boolean commandEquals(String input, String expected) {
@@ -7619,10 +7625,20 @@ public class TWEngine {
   
   
   public class InputModule {
+    // Keywords:
+    // Primary- Left click, or normal tap on touchscreen devices
+    // Secondary- Right click, or hold on touchscreen devices (holding touchscreen functionality not implemented yet)
+    // Once- User clicks down and boolean becomes true for one frame, regardless how how long user holds down button for.
+    // Down- User clicks down, and stays true for as long as user holds button down.
+    // Released- Becomes true for one frame when user releases button.
+    // Solid- User must click down then release without moving mouse for this to come true for one frame.
+    
     
     // Mouse & keyboard
     public boolean primaryOnce = false;
     public boolean secondaryOnce = false;
+    public boolean primarySolid = false; 
+    public boolean secondarySolid = false;
     public boolean primaryDown = false;
     public boolean secondaryDown = false;
     public boolean primaryReleased = false;
@@ -7632,6 +7648,9 @@ public class TWEngine {
     
     public int cursorX = 0;
     public String CURSOR_CHAR = "";
+    private char characterFired = 0;
+    
+    //public String keyboardMessage = "";
     
     public boolean mouseMoved = false;
     
@@ -7639,8 +7658,9 @@ public class TWEngine {
     public float   scroll = 0;
     public float   scrollSensitivity = 30.0;
     
-    public String keyboardMessage = "";
+    //public String keyboardMessage = "";
     public boolean addNewlineWhenEnterPressed = true;
+    public int accidentalClickPreventionTimer = 0;
     
     // used for one-time click
     private boolean click = false;
@@ -7652,6 +7672,8 @@ public class TWEngine {
     private char lastKeyPressed = 0;
     private int lastKeycodePressed = 0;
     private float holdKeyFrames = 0.;
+    private boolean keyFired = false;
+    private boolean typingDelay = false;
     
     private float cache_mouseX = 0.0;
     private float cache_mouseY = 0.0;
@@ -7719,10 +7741,18 @@ public class TWEngine {
       
       
       //*************MOUSE CLICKING*************
-      // "Shouldn't it be (app.mouseButton == LEFT)?"
-      // One word. MacOS.
-      primaryDown = app.mousePressed && (app.mouseButton != RIGHT);
-      secondaryDown = (app.mousePressed &&  (app.mouseButton == RIGHT));
+      
+      // Ignore all registered clicks until one mouse down and mouse up event.
+      if (accidentalClickPreventionTimer <= 0) {
+        // "Shouldn't it be (app.mouseButton == LEFT)?"
+        // One word. MacOS.
+        primaryDown = app.mousePressed && (app.mouseButton != RIGHT);
+        secondaryDown = app.mousePressed &&  (app.mouseButton == RIGHT);
+      }
+      else {
+        primaryDown = false;
+        secondaryDown = false;
+      }
       
       // If the mouse begins click on the frame, this will be later updated to true.
       // Then next frame this will be set to false, and because of the one-click code,
@@ -7731,6 +7761,8 @@ public class TWEngine {
       secondaryOnce = false;
       primaryReleased = false;
       secondaryReleased = false;
+      primarySolid = false;
+      secondarySolid = false;
       keyOnce = false;
       
       normalClickTimeout -= display.getDelta();
@@ -7748,9 +7780,11 @@ public class TWEngine {
           normalClickTimeout = 15.;
         eventClick = false;
         
-        primaryOnce = (app.mouseButton != RIGHT);
-        
-        secondaryOnce = (app.mouseButton == RIGHT);
+        // Ignore triggering once clicks if accidental click prevention is on.
+        if (accidentalClickPreventionTimer <= 0) {
+          primaryOnce = (app.mouseButton != RIGHT);
+          secondaryOnce = (app.mouseButton == RIGHT);
+        }
         
         mouseMoved = false;
         clickStartX = mouseX();
@@ -7758,12 +7792,23 @@ public class TWEngine {
       }
       else if (!app.mousePressed && click) {
         click = false;
-        primaryReleased = (app.mouseButton != RIGHT);
-        secondaryReleased = (app.mouseButton == RIGHT);
         
         if (clickStartX != mouseX() || clickStartY != mouseY()) {
           mouseMoved = true;
         }
+        
+        // Ignore triggering release clicks if accidental click prevention is on.
+        // However, this is also our queue to deactivate accidentalClickPrevention, since a mouse down and up event has been completed.
+        if (accidentalClickPreventionTimer <= 0) {
+          primaryReleased = (app.mouseButton != RIGHT);
+          secondaryReleased = (app.mouseButton == RIGHT);
+          
+          primarySolid = primaryReleased && !mouseMoved;
+          secondarySolid = secondaryReleased && !mouseMoved;
+        }
+      }
+      else if (!app.mousePressed && accidentalClickPreventionTimer > 0) {
+        accidentalClickPreventionTimer--;
       }
   
   
@@ -7830,78 +7875,6 @@ public class TWEngine {
       
       
       // ************TYPING*******************
-      boolean solidifyBlink = true;
-      
-      if (leftOnce) { 
-        cursorX--;
-        if (ctrlDown) {
-          boolean traversed = false;
-          while (ctrlTraversable()) {
-            cursorX--;
-            traversed = true;
-          }
-          if (traversed) cursorX++;
-        }
-      }
-      else if (rightOnce) {
-        cursorX++;
-        if (ctrlDown) {
-          while (ctrlTraversable()) {
-            cursorX++;
-          }
-        }
-      }
-      else if (upOnce) { 
-        // Start of current line
-        int startOfCurrLine = keyboardMessage.lastIndexOf('\n', cursorX)+1;
-        int dist = cursorX-startOfCurrLine;
-        
-        // start of prev line
-        int startOfPrevLine = keyboardMessage.lastIndexOf('\n', startOfCurrLine-2)+1;
-        
-        // Let's say for example you move your cursor like this:
-        //
-        // short
-        // A longer mess|ge hello world
-        // 
-        // short|
-        // A longer message hello world
-        //
-        // As you can see, "short" is not long enough to plonk the cursor into the new position,
-        // so it gets put at the start.
-        if (startOfCurrLine-startOfPrevLine < dist) {
-          cursorX = startOfCurrLine-1;
-        }
-        else {
-          cursorX = startOfPrevLine+dist;
-        }
-      }
-      else if (downOnce) { 
-        // Start of current line
-        int startOfThisLine = keyboardMessage.lastIndexOf('\n', cursorX-1)+1;
-        int startOfNextLine = keyboardMessage.indexOf('\n', cursorX)+1;
-        if (startOfNextLine != 0) {
-          int dist = cursorX-startOfThisLine;
-          cursorX = startOfNextLine+dist;
-        }
-      }
-      else if (keyOnce) {}
-      else solidifyBlink = false;
-      
-      // Paste text
-      // If you're wondering, need to use keys['v'] == 2 since there's a special exception when there's input prompts.
-      if (input.ctrlDown && keys['v'] == 2 && clipboard.isString()) {
-        String insert = clipboard.getText();
-        this.keyboardMessage = keyboardMessage.substring(0, cursorX) + insert + keyboardMessage.substring(cursorX);
-        cursorX += insert.length();
-      }
-      
-      if (solidifyBlink) {
-        blinkTime = 0.0;
-      }
-      cursorX = max(min(cursorX, keyboardMessage.length()), 0);
-    
-      blinkTime += display.getDelta();
   
       //*************MOUSE WHEEL*************
       if (rawScroll != 0) {
@@ -7913,13 +7886,124 @@ public class TWEngine {
     }
     
     
-    public void prepareTyping() {
-      keyboardMessage = "";
+    public void accidentalClickPrevention() {
+      accidentalClickPreventionTimer = 2;
+      //primaryOnce = false;
+      //secondaryOnce = false;
+      //primaryReleased = false;
+      //secondaryReleased = false;
+      //primaryDown = false;
+      //secondaryDown = false;
+    }
+    
+    
+    public void beginTyping() {
       cursorX = 0;
     }
     
-    private boolean ctrlTraversable() {
-      if (cursorX >= keyboardMessage.length()) {
+    
+    public String getTyping(String str) {
+      boolean solidifyBlink = true;
+      
+      if (typingDelay) {
+        typingDelay = false;
+        keyFired = false;
+        return str;
+      }
+      
+      if (keyFired) {
+        if (leftDown) { 
+          cursorX--;
+          if (ctrlDown) {
+            boolean traversed = false;
+            while (ctrlTraversable(str)) {
+              cursorX--;
+              traversed = true;
+            }
+            if (traversed) cursorX++;
+          }
+        }
+        else if (rightDown) {
+          cursorX++;
+          if (ctrlDown) {
+            while (ctrlTraversable(str)) {
+              cursorX++;
+            }
+          }
+        }
+        else if (upOnce) { 
+          // Start of current line
+          int startOfCurrLine = str.lastIndexOf('\n', cursorX)+1;
+          int dist = cursorX-startOfCurrLine;
+          
+          // start of prev line
+          int startOfPrevLine = str.lastIndexOf('\n', startOfCurrLine-2)+1;
+          
+          // Let's say for example you move your cursor like this:
+          //
+          // short
+          // A longer mess|ge hello world
+          // 
+          // short|
+          // A longer message hello world
+          //
+          // As you can see, "short" is not long enough to plonk the cursor into the new position,
+          // so it gets put at the start.
+          if (startOfCurrLine-startOfPrevLine < dist) {
+            cursorX = startOfCurrLine-1;
+          }
+          else {
+            cursorX = startOfPrevLine+dist;
+          }
+        }
+        else if (downOnce) { 
+          // Start of current line
+          int startOfThisLine = str.lastIndexOf('\n', cursorX-1)+1;
+          int startOfNextLine = str.indexOf('\n', cursorX)+1;
+          if (startOfNextLine != 0) {
+            int dist = cursorX-startOfThisLine;
+            cursorX = startOfNextLine+dist;
+          }
+        }
+        else if (backspaceOnce) {
+          str = backspace(str);
+        }
+        else if (enterOnce) {
+          str = insert(str, '\n');
+        }
+        else if (characterFired >= 32 && characterFired != 127) {
+          str = insert(str, characterFired);
+          characterFired = 0;
+        }
+        else solidifyBlink = false;
+        
+        keyFired = false;
+      }
+      else {
+        solidifyBlink = false;
+      }
+      
+      // Paste text
+      // If you're wondering, need to use keys['v'] == 2 since there's a special exception when there's input prompts.
+      if (input.ctrlDown && keys['v'] == 2 && clipboard.isString()) {
+        String insert = clipboard.getText();
+        str = str.substring(0, cursorX) + insert + str.substring(cursorX);
+        cursorX += insert.length();
+      }
+      
+      if (solidifyBlink) {
+        blinkTime = 0.0;
+      }
+      cursorX = max(min(cursorX, str.length()), 0);
+    
+      blinkTime += display.getDelta();
+      
+      return str;
+    }
+    
+    
+    private boolean ctrlTraversable(String str) {
+      if (cursorX >= str.length()) {
         return false;
       }
       else if (cursorX == 0) {
@@ -7929,7 +8013,7 @@ public class TWEngine {
         cursorX = 0;
         return false;
       }
-      char c = keyboardMessage.charAt(cursorX);
+      char c = str.charAt(cursorX);
       return c != ' '
           && c != '\n'
           && c != '('
@@ -8022,10 +8106,6 @@ public class TWEngine {
       }
       return code;
     }
-    
-    public String keyboardMessageDisplay() {
-      return keyboardMessageDisplay(keyboardMessage);
-    }
   
     public boolean keyDown(char k) {
       if (inputPromptShown) return false;
@@ -8078,34 +8158,48 @@ public class TWEngine {
     public boolean keyActionOnce(String keybindName, char defaultKey) {
       char k = settings.getKeybinding(keybindName, defaultKey);
       
+      boolean val = false;
+      
       // Special keys/buttons
-      if (k == LEFT_CLICK)
-        return this.primaryOnce;
-      else if (k == RIGHT_CLICK)
-        return this.secondaryOnce;
-      else if (k == SHIFT_KEY)
-        return this.shiftOnce;
-      else if (k == ALTGR_KEY)
-        return this.altgrOnce;
-      else if (k == ALT_KEY)
-        return this.altOnce;
-      else if (k == CTRL_KEY)
-        return this.ctrlOnce;
+      if (k == LEFT_CLICK) {
+        val = this.primaryOnce;
+      }
+      else if (k == RIGHT_CLICK) {
+        val = this.secondaryOnce;
+      }
+      else if (k == SHIFT_KEY) {
+        val = this.shiftOnce;
+      }
+      else if (k == ALTGR_KEY) {
+        val = this.altgrOnce;
+      }
+      else if (k == ALT_KEY) {
+        val = this.altOnce;
+      }
+      else if (k == CTRL_KEY) {
+        val = this.ctrlOnce;
+      }
       else {
         // Otherwise just tell us if the key is down or not
-        return keyDownOnce(k);
+        val = keyDownOnce(k);
       }
+      
+      if (val) {
+        typingDelay = true;
+      }
+      
+      return val;
     }
     
-    private void backspace() {
-      backspaceOnce();
+    private String backspace(String str) {
+      str = backspaceOnce(str);
       
       if (ctrlDown) {
         int prevCursorX = cursorX;
         cursorX--;
         
         int backspacesCount = 0;
-        while (ctrlTraversable()) {
+        while (ctrlTraversable(str)) {
           cursorX--;
           backspacesCount++;
         }
@@ -8113,16 +8207,20 @@ public class TWEngine {
         cursorX = prevCursorX;
         
         for (int i = 0; i < backspacesCount; i++) {
-          backspaceOnce();
+          str = backspaceOnce(str);
         }
       }
+      
+      return str;
     }
   
-    private void backspaceOnce() {
-      if (this.keyboardMessage.length() > 0 && cursorX > 0)  {
-        this.keyboardMessage = keyboardMessage.substring(0, cursorX-1)+keyboardMessage.substring(cursorX);
+    private String backspaceOnce(String str) {
+      if (str.length() > 0 && cursorX > 0)  {
+        str = str.substring(0, cursorX-1)+str.substring(cursorX);
         cursorX--;
       }
+      
+      return str;
     }
     
     public float mouseX() {
@@ -8245,7 +8343,8 @@ public class TWEngine {
         else scrollOffset += input.scroll;
       }
     }
-      
+    
+    
     
     public void clickEventAction() {
       // We don't want to trigger a click if the normal clicking system receives a click.
@@ -8293,22 +8392,26 @@ public class TWEngine {
           case LEFT:
             leftDownCounter = 0;
             leftDown = true;
+            keyFired = true;
             break;
           case RIGHT:
             rightDownCounter = 0;
             rightDown = true;
+            keyFired = true;
             break;
           case UP:
             upDownCounter = 0;
             upDown = true;
+            keyFired = true;
             break;
           case DOWN:
             downDownCounter = 0;
             downDown = true;
+            keyFired = true;
             break;
           case BACKSPACE:
-            this.backspace();
             backspaceDown = true;
+            keyFired = true;
             break;
           case 77:  // Glitchy key which isn't supposed to do anything.
             
@@ -8316,17 +8419,19 @@ public class TWEngine {
         // 10 for android
       } else if ((kkey == ENTER || kkey == RETURN || int(kkey) == 10) && !ctrlDown) {
         if (this.addNewlineWhenEnterPressed) {
-          insert('\n');
+          characterFired = '\n';
         }
         enterDown = true;
+        keyFired = true;
         // 65535 67 for android
       }
       //else if (kkey == BACKSPACE) {    // Backspace
       //  this.backspace();
       //  backspaceDown = true;
       //}
-      else {
-        insert(kkey);
+      else if (kkey != 9) {
+        characterFired = kkey;
+        keyFired = true;
       }
       
       // And actually set the current pressed key state
@@ -8340,6 +8445,7 @@ public class TWEngine {
         actualKey = char(kkeyCode);
       }
       
+      
       int val = int(Character.toLowerCase(actualKey));
       
       if (val >= 1024) return;
@@ -8350,17 +8456,19 @@ public class TWEngine {
       stats.increase("keys_pressed", 1);
     }
   
-    public void insert(char c) {
+    public String insert(String str, char c) {
       // Remember, we now have a cursor.
       // If we're typing at the end, simply append char (like normal)
-      if (cursorX == keyboardMessage.length()) {
-        keyboardMessage += c;
+      if (cursorX == str.length()) {
+        str += c;
       }
       // Otherwise, add the char in between the text.
       else {
-        this.keyboardMessage = keyboardMessage.substring(0, cursorX) + c + keyboardMessage.substring(cursorX);
+        str = str.substring(0, cursorX) + c + str.substring(cursorX);
       }
       cursorX++;
+      
+      return str;
     }
   }
   // Cus why replace 9999999 lines of code when you can write 6 new lines of code that makes sure everything still works.
@@ -8880,9 +8988,25 @@ public abstract class Screen {
       engine.power.resetFPSSystem();
       engine.allowShowCommandPrompt = true;
       engine.transitionDirection = RIGHT;
+      input.accidentalClickPrevention();
       //engine.setAwake();
     }
     //printStack();
+  }
+  
+  
+  protected boolean mouseWwithinContent() {
+    if (display == null || input == null) return false;
+    return input.mouseY() < display.HEIGHT-myLowerBarWeight && input.mouseY() > myUpperBarWeight;
+  }
+    
+  protected boolean mouseWithinUpperBar() {
+    return input.mouseY() <= myUpperBarWeight;
+  }
+  
+  protected boolean mouseWithinLowerBar() {
+    if (display == null || input == null) return false;
+    return input.mouseY() >= display.HEIGHT-myLowerBarWeight;
   }
 
   protected void previousScreen() {
@@ -8892,14 +9016,14 @@ public abstract class Screen {
       
       // Request screen but without stack pushing
       Screen prevScreen = this.engine.screenStack.pop();
-      if (engine.currScreen == this && engine.transitionScreens == false) {
-        engine.prevScreenTransition = engine.currScreen;
-        engine.currScreen = prevScreen;
-        prevScreen.startScreenTransition();
-        engine.power.resetFPSSystem();
-        engine.allowShowCommandPrompt = true;
+      //if (engine.currScreen == this && engine.transitionScreens == false) {
+      engine.prevScreenTransition = engine.currScreen;
+      engine.currScreen = prevScreen;
+      prevScreen.startScreenTransition();
+      engine.power.resetFPSSystem();
+      engine.allowShowCommandPrompt = true;
         //engine.setAwake();
-      }
+      //}
       
       engine.transitionDirection = LEFT;
       engine.power.setAwake();

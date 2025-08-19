@@ -138,11 +138,11 @@ public class Explorer extends Screen {
       
       Runnable r = new Runnable() {
         public void run() {
-          if (input.keyboardMessage.length() <= 1) {
+          if (engine.promptInput.length() <= 1) {
             console.log("Please enter a valid folder name!");
             return;
           }
-          String foldername = file.currentDir+input.keyboardMessage;
+          String foldername = file.currentDir+engine.promptInput;
           new File(foldername).mkdirs();
           refreshDir();
         }
@@ -157,11 +157,11 @@ public class Explorer extends Screen {
       
       Runnable r = new Runnable() {
         public void run() {
-          if (input.keyboardMessage.length() <= 1) {
+          if (engine.promptInput.length() <= 1) {
             console.log("Please enter a valid project name!");
             return;
           }
-          String name = file.currentDir+input.keyboardMessage;
+          String name = file.currentDir+engine.promptInput;
           createNewProject(name);
           refreshDir();
           file.open(name+"."+engine.SKETCHIO_EXTENSION);

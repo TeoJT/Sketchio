@@ -845,7 +845,6 @@ public class Sketchpad extends Screen {
     
     canvasY = myUpperBarWeight;
     
-    input.keyboardMessage = "";
     code = "";
     // Load default code into keyboardMessage
     for (String s : defaultCode) {
@@ -1376,15 +1375,13 @@ public class Sketchpad extends Screen {
   private boolean inCanvasPane = false;
   
   private void displayCanvas(boolean allowMouseActivity) {
-    if (input.altDown && input.shiftDown && input.keys[int('s')] == 2) {
-      input.backspace();
+    if (input.altDown && input.shiftDown && input.keyDownOnce('s')) {
       resetView();
     }
     
     boolean menuShown = menuShown();
     if ((lastSelectedPane == CANVAS_PANE || !codeEditorShown()) && input.keyActionOnce("playPause", ' ') && !menuShown) {
        togglePlay();
-       input.backspace();   // Don't want the unintended space.
     }
     
     // Difficulty: we have 2 scroll areas: canvas zoom, and code editor.
@@ -1489,7 +1486,8 @@ public class Sketchpad extends Screen {
       // make sure code string is sync'd with keyboardmessage
       
       // BIG TODO: This is not the safest solution. Please fix.
-      if (!menuShown() && !loading.get() && input.keyboardMessage.length() > 0) code = input.keyboardMessage;
+      //if (!menuShown() && !loading.get() && input.keyboardMessage.length() > 0) code = input.keyboardMessage;
+      code = input.getTyping(code);
       
       // This should really be in the displayCanvas code but it's more convenient to have it here for now.
       // Damn I'm really giving myself coding debt for adding shortcuts.
@@ -1500,20 +1498,19 @@ public class Sketchpad extends Screen {
       
       
       // ctrl+s save keystroke
-      // Really got to fix this input.keys flaw thing.
-      if (!input.altDown && input.ctrlDown && input.keys[int('s')] == 2) {
+      if (input.ctrlDown && input.keyDownOnce('s')) {
         saveScripts();
       }
       
       
       // Zoom in/out keys
-      if (input.altDown && input.keys[int('=')] == 2) {
+      if (input.ctrlDown && input.altDown && input.keyDownOnce('=')) {
         textAreaZoom += 2.;
-        input.backspace();
+        //input.backspace();
       }
-      if (input.altDown && input.keys[int('-')] == 2) {
+      if (input.ctrlDown && input.altDown && input.keyDownOnce('-')) {
         textAreaZoom -= 2.;
-        input.backspace();
+        //input.backspace();
       }
       
       // Scroll slightly when some y added to text.
@@ -1757,7 +1754,6 @@ public class Sketchpad extends Screen {
       // Cross button
       if (ui.buttonVary("config-cross-1", "cross", "")) {
         sound.playSound("select_smaller");
-        input.keyboardMessage = code;
         configMenu = false;
       }
       
@@ -1792,7 +1788,6 @@ public class Sketchpad extends Screen {
         saveConfig();
         
         // End
-        input.keyboardMessage = code;
         configMenu = false;
       }
     }
@@ -1881,14 +1876,12 @@ public class Sketchpad extends Screen {
         }
         
         beginRendering();
-        input.keyboardMessage = code;
         renderMenu = false;
       }
       
       // Close menu button
       if (ui.buttonVary("render-cross-1", "cross", "")) {
         sound.playSound("select_smaller");
-        input.keyboardMessage = code;
         renderMenu = false;
       }
       
@@ -1938,13 +1931,13 @@ public class Sketchpad extends Screen {
         
         Runnable r = new Runnable() {
           public void run() {
-            if (input.keyboardMessage.length() < 1) {
+            if (engine.promptInput.length() < 1) {
               console.log("Please enter a valid name!");
               return;
             }
             
-            LerpAutomationBar bar = new LerpAutomationBar(input.keyboardMessage);
-            automationBars.put(input.keyboardMessage, bar);
+            LerpAutomationBar bar = new LerpAutomationBar(engine.promptInput);
+            automationBars.put(engine.promptInput, bar);
             addAutomationBarToDisplay(bar);
           }
         };
@@ -1985,13 +1978,12 @@ public class Sketchpad extends Screen {
       String disp = gui.interactable ? "white" : "nothing";
       if (selectedField == this) {
         gui.spriteVary(spriteName, disp);
-        value = input.keyboardMessage;
+        value = input.getTyping(value);
       }
       else {
         if (ui.buttonVary(spriteName, disp, "")) {
           selectedField = this;
-          input.keyboardMessage = value;
-          input.cursorX = input.keyboardMessage.length();
+          input.cursorX = value.length();
         }
       }
       
@@ -2337,8 +2329,6 @@ public class Sketchpad extends Screen {
             setMusic(selectedMusic);
           }
           
-          
-          input.keyboardMessage = code;
           input.cursorX = code.length();
           compileCode(code);
           
@@ -2539,7 +2529,6 @@ public class Sketchpad extends Screen {
         bpmField.value = str(bpm);
         selectedField = null;
         configMenu = true;
-        input.keyboardMessage = "";
       }
       
       if (ui.button("render_button", "image_128", "Render")) {
@@ -2547,7 +2536,6 @@ public class Sketchpad extends Screen {
         selectedField = null;
         framerateField.value = "60";
         renderMenu = true;
-        input.keyboardMessage = "";
       }
       
       if (ui.button("folder_button", "folder_128", "Show files")) {
