@@ -7,10 +7,14 @@ import java.io.PrintWriter;
 *********************************** Sketchio ***********************************
 *     A fork of the Timeway engine repurposed to be the new Sketchiepad.
 * 
+* PRODUCT GOAL: To be a simple editor for making and rendering animations really quickly.
+* Originally aimed for programmers, but designed to be used by non-programmer artists.
+* All the tools needed to make an animation are provided from the get-go.
+* For programmers, a full API is provided as well as templates for useful effects.
+* For artists, familiar tools such as automation, a painter and keyframes are provided.
 * 
-*
-*
-* 
+* We keep it within this scope as closely as possible. We keep it simple.
+* We do not overengineer it or overcomplicate it.
 **/
 
 
@@ -33,7 +37,7 @@ String sketch_ERR_LOG_PATH;
 // Set to true if you want to show the error log like in an exported build
 // rather than throw the error to processing (can be useful if you need more
 // error info)
-final boolean sketch_FORCE_CRASH_SCREEN = false;
+final boolean sketch_FORCE_CRASH_SCREEN = true;
 final boolean sketch_MAXIMISE = true;
 
 void settings() {

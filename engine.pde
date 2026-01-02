@@ -54,7 +54,7 @@ import java.util.concurrent.TimeUnit;
 public class TWEngine {
   //*****************CONSTANTS SETTINGS**************************
   // Info and versioning
-  private static final String VERSION     = "0.1.8";
+  private static final String VERSION     = "0.2.0";
   
   public String getAppName() {
     return "Timeway";
@@ -166,6 +166,7 @@ public class TWEngine {
   public boolean focusedMode = true;
   public boolean lowMemory = false;
   public boolean enableCaching = true;
+  private SpriteSystem dummySpriteSystem;
   
   
   
@@ -436,7 +437,6 @@ public class TWEngine {
     
   // Power modes
     public PowerMode powerMode = PowerMode.HIGH;
-    private boolean noBattery = false;
     private boolean sleepyMode = false;
     private boolean dynamicFramerate = true;
     private boolean powerSaver = false;
@@ -558,34 +558,6 @@ public class TWEngine {
     
     public boolean getPowerSaver() { return powerSaver; }
     
-    public class NoBattery extends RuntimeException {
-      public NoBattery(String message) {
-        super(message);
-      }
-    }
-  
-    public void updateBatteryStatus() {
-      //powerStatus = new Kernel32.SYSTEM_POWER_STATUS();
-      //Kernel32.INSTANCE.GetSystemPowerStatus(powerStatus);
-    }
-  
-    public int batteryPercentage() throws NoBattery {
-      //String str = powerStatus.getBatteryLifePercent();
-      String str = "100";
-      str = str.substring(0, str.length()-1);
-      try {
-        int percent = Integer.parseInt(str);
-        return percent;
-      }
-      catch (NumberFormatException ex) {
-        throw new NoBattery("Battery not found..? ("+str+")");
-      }
-    }
-  
-    public boolean isCharging() {
-      //return (powerStatus.getACLineStatusString().equals("Online"));
-      return false;
-    }
   
     public void updatePowerModeNow() {
       lastPowerCheck = millis();
@@ -593,7 +565,7 @@ public class TWEngine {
   
     public void setSleepy() {
       if (dynamicFramerate) {
-        if (!isCharging() && !noBattery && !sleepyMode) {
+        if (!sleepyMode) {
           sleepyMode = true;
           powerModeBefore = getPowerMode();
           lastPowerCheck = millis()+POWER_CHECK_INTERVAL;
@@ -727,12 +699,6 @@ public class TWEngine {
           setPowerMode(PowerMode.SLEEPY);
         }
       }
-      //if (!isCharging() && !noBattery && sleepyMode) {
-      //  prevPowerMode = powerMode;
-      //  fpsTrackingMode = SLEEPY;
-      //  setPowerMode(PowerMode.SLEEPY);
-      //  return;
-      //}
       
       if (sleepyMode) return;
         
@@ -1191,7 +1157,7 @@ public class TWEngine {
     public void clip(float x, float y, float wi, float hi) {
       currentPG.imageMode(CORNER);
       if (currentPG == g) {
-        app.clip(x*displayScale, y*displayScale, wi*displayScale, hi*displayScale);
+        app.clip(x*displayScale+currScreen.screenx, y*displayScale+currScreen.screeny, wi*displayScale, hi*displayScale);
       }
       else {
         currentPG.clip(x, y, wi, hi);
@@ -1643,6 +1609,13 @@ public class TWEngine {
             prevScreenTransition = null;
           }
           
+          // If the screen is marked as having no back option,
+          // then there's no point keeping it in the stack as it
+          // traps useless memory.
+          if (currScreen.clearPreviousScreens) {
+            screenStack.hardClear();
+          }
+          
           //console.log("END");
   
           // If we're just getting started, we need to get a feel for the framerate since we don't want to start
@@ -1749,7 +1722,8 @@ public class TWEngine {
         public MiniMenu() {
             power.setAwake();
             yappear = 1.;
-            sound.playSound("fade_in");
+            //sound.playSound("fade_in");
+            sound.playSound("multiple_choice");
         }
         
         public MiniMenu(float x, float y) {
@@ -1770,7 +1744,8 @@ public class TWEngine {
                 disappear = true;
                 power.setSleepy();
                 yappear = 1.;
-                sound.playSound("fade_out");
+                //sound.playSound("fade_out");
+                sound.playSound("multiple_choice");
             }
         }
 
@@ -2182,11 +2157,26 @@ public class TWEngine {
         return 40.;
       }
       
+      // Duplicate but using sound.
+      public void detectUserInput() {
+        if (usingNode == null && inBox() && input.primaryOnce) {
+          usingNode = this;
+          sound.loopSound("scroller");
+        }
+        if (usingNode != null && !input.primaryDown) {
+          usingNode = null;
+          sound.stopSound("scroller");
+        }
+      }
+      
       protected void getSliderVal() {
         if (usingNode == this) {
           app.stroke(160);
+          float percentBefore = valFloat/max;  // Used for sound.
           valFloat = min+((mouseX()-x-CONTROL_X)/(wi-CONTROL_X))*(max-min);
           valFloat = min(max(valFloat, min), max);
+          float percentage = valFloat/max;     // Used for sound.
+          sound.setSoundVolume("scroller", min(pow(abs(percentage-percentBefore)*200f, 2f), 1.0f));
           power.setAwake();
         }
         else if (usingNode == null) {
@@ -2246,6 +2236,7 @@ public class TWEngine {
       }
     }
     
+    private int scrollerOnceSoundResetTime = 0;
     
     public class CustomSliderInt extends CustomSlider {
       
@@ -2257,6 +2248,16 @@ public class TWEngine {
       public void setVal(int val) {
         this.valFloat = (float)val;
         valInt = round(valFloat);
+      }
+      
+      
+      public void detectUserInput() {
+        if (usingNode == null && inBox() && input.primaryOnce) {
+          usingNode = this;
+        }
+        if (usingNode != null && !input.primaryDown) {
+          usingNode = null;
+        }
       }
       
       @Override
@@ -2279,7 +2280,16 @@ public class TWEngine {
         app.noStroke();
         app.fill(255);
         
+        int valIntBefore = valInt;
         valInt = round(valFloat);
+        if (valInt != valIntBefore && scrollerOnceSoundResetTime <= 0) {
+          sound.stopSound("scroller");
+          sound.playSound("scroller_once");
+          scrollerOnceSoundResetTime = 9;
+        }
+        scrollerOnceSoundResetTime--;
+        
+        
         float percentage = (round(valFloat)-min)/(max-min);
         app.rect(x+CONTROL_X+percentage*(wi-CONTROL_X)-5, y-15, 10, 30);
       }
@@ -2344,6 +2354,23 @@ public class TWEngine {
         return button(name, texture, displayText);
       }
     }
+    
+    public boolean buttonVaryOnce(String name, String texture, String displayText) {
+      if (display.phoneMode) {
+        return buttonOnce(name+"-phone", texture, displayText);
+      }
+      else {
+        return buttonOnce(name, texture, displayText);
+      }
+    }
+    
+    public boolean buttonOnce(String name, String texture, String displayText) {
+      SpriteSystem.Sprite sprite = currentSpritePlaceholderSystem.getSprite(name);
+      boolean clik = button(name, texture, displayText);
+      if (sprite.clicked) return false;
+      if (clik) sprite.clicked = true;
+      return clik;
+    }
   
     public boolean button(String name, String texture, String displayText) {
   
@@ -2364,7 +2391,6 @@ public class TWEngine {
       // Full brightness when not hovering
       app.tint(255, guiFade);
       app.fill(255, guiFade);
-  
       // To click:
       // - Must not be in a minimenu
       // - Must not be in gui move sprite / edit mode.
@@ -2467,9 +2493,8 @@ public class TWEngine {
     
     public SpriteSystem getInUseSpriteSystem() {
       if (currentSpritePlaceholderSystem == null) {
-        // TODO: Return a blank spritesystem so that we don't crash.
-        console.warn("No sprite system currently in use!");
-        return null;
+        console.bugWarnOnce("getInUseSpriteSystem: No sprite system currently in use!");
+        return dummySpriteSystem;
       }
       return currentSpritePlaceholderSystem;
     }
@@ -2703,8 +2728,13 @@ public class TWEngine {
       }
       
       public void jump(float pos) {
-        if (mode == CACHED) cachedMusic.jump(pos); 
-        else if (mode == STREAM && !DISABLE_GSTREAMER) streamMusic.jump(pos);
+        try {
+          if (mode == CACHED) cachedMusic.jump(pos); 
+          else if (mode == STREAM && !DISABLE_GSTREAMER) streamMusic.jump(pos);
+        }
+        catch (RuntimeException e) {
+          console.warn("Caught failed seek operation");
+        }
         // Since android loops we don't need to worry about this (for now).
       }
       
@@ -3023,9 +3053,9 @@ public class TWEngine {
                   // Bug fix: mp3 sampleRate() doesn't seem to be very accurate
                   // for mp3 files
                   // TODO: Read mp3/ogg header data and determine samplerate there.
-                  if (ext.equals("mp3")) {
-                    samplerate = 48000;
-                  }
+                  //if (ext.equals("mp3")) {
+                  //  samplerate = 48000;
+                  //}
                   
                   saveAsWav(s, samplerate, cachedFilePathFinal);
                   s.removeFromCache();
@@ -3283,6 +3313,21 @@ public class TWEngine {
       if (streamerMusic != null) {
         // We use pause instead of stop because stop can cause crashes
         streamerMusic.pause();
+          
+        streamerMusic = null;
+      }
+      if (streamerMusicFadeTo != null) {
+        streamerMusicFadeTo.stop();
+        streamerMusicFadeTo = null;
+      }
+    }
+    
+    // This is such a bad solution omg.
+    // Rest assured that this will be replaced in due time.
+    public void forceStopMusic() {
+      if (streamerMusic != null) {
+        // We use pause instead of stop because stop can cause crashes
+        streamerMusic.stop();
           
         streamerMusic = null;
       }
@@ -3766,6 +3811,7 @@ public class TWEngine {
     public String fileSelected = null;
     public boolean fileSelectSuccess = false;
     public boolean selectingFile = false;
+    private String fileOperationErrorMessage = "";
     public Object objectToSave;
     private HashSet<String> everything = new HashSet<String>();
     
@@ -3812,13 +3858,50 @@ public class TWEngine {
       }
     }
     
+    
+    public String getFileError() {
+      return fileOperationErrorMessage;
+    }
+    
+    // yea i used ai for this but hey it gets the job done.
+    public boolean isValidWindowsFilename(String name) {
+        if (name == null || name.isEmpty()) return false;
+    
+        // 1. Invalid characters: \ / : * ? " < > |
+        // 2. Cannot end with space or dot
+        // 3. Cannot be a reserved Windows device name
+        String invalidChars = ".*[\\\\/:*?\"<>|].*";
+        if (name.matches(invalidChars)) return false;
+    
+        // Ends with space or dot
+        if (name.matches(".*[ .]$")) return false;
+    
+        // Reserved device names (case-insensitive)
+        // CON, PRN, AUX, NUL, COM1–COM9, LPT1–LPT9
+        if (name.matches("(?i)^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$")) return false;
+    
+        return true;
+    }
+
+    
+    
     public boolean mv(String oldPlace, String newPlace) {
+      //console.log("MOVE");
+      //Thread.dumpStack();
       // We know we're merely accessing a fake filesystem now in android.
       if (isAndroid() && (oldPlace.charAt(0) != '/' || newPlace.charAt(0) != '/')) {
         console.bugWarn("You can't move files to/from the assets folder! It's read-only!");
+        fileOperationErrorMessage = newPlace+"cannot move read-only files";
         return false;
       }
       
+      // Check for invalid characters
+      if (isWindows() && !isValidWindowsFilename(getFilename(newPlace))) {
+        fileOperationErrorMessage = "invalid filename.";
+        return false;
+      }
+      
+      // Create dir if it doesn't already exist.
       if (!exists(getDir(newPlace))) {
         mkdir(getDir(newPlace));
       }
@@ -3827,18 +3910,27 @@ public class TWEngine {
         File of = new File(oldPlace);
         File nf = new File(newPlace);
         if (nf.exists()) {
+           fileOperationErrorMessage = newPlace+" already exists.";
            return false;
         }
         if (of.exists()) {
-          of.renameTo(nf);
+          boolean success = of.renameTo(nf);
+          
+          if (!success) {
+            fileOperationErrorMessage = "file may be in use.";
+            //console.warn("Failed to move "+getFilename(oldPlace)+", file may be in use.");
+            return false;
+          }
+          
           // If the file is cached, move the cached file too to avoid stalling and creating duplicate cache
           moveCache(oldPlace, newPlace);
         } else if (!of.exists()) {
+          fileOperationErrorMessage = oldPlace+" doesn't exist.";
           return false;
         }
       }
       catch (SecurityException e) {
-        console.warn(e.getMessage());
+        fileOperationErrorMessage = "file permission denied.";
         return false;
       }
       return true;
@@ -3876,6 +3968,10 @@ public class TWEngine {
     public boolean recycle(String oldLocation) {
       //String newName = nf(random(0, 99999999), 8, 0);
       String newName = getIsolatedFilename(oldLocation)+"."+getExt(oldLocation);
+      if (isDirectory(oldLocation)) {
+        newName = getIsolatedFilename(oldLocation);
+      }
+      
       while (exists(APPPATH+RECYCLE_BIN_PATH+newName)) {
         newName = getIsolatedFilename(oldLocation)+"-"+nf(random(0, 99999999), 8, 0)+"."+getExt(oldLocation);
       }
@@ -3883,7 +3979,6 @@ public class TWEngine {
       recycleBinCheck();
       
       if (!mv(oldLocation, APPPATH+RECYCLE_BIN_PATH+newName)) {
-        console.warn("Could not recycle "+getFilename(oldLocation)+", maybe file permissions denied?");
         return false;
       }
       
@@ -3955,7 +4050,6 @@ public class TWEngine {
             while ((length = fis.read(buffer)) > 0) {
                 fos.write(buffer, 0, length);
             }
-            System.out.println("File copied successfully.");
             
             fis.close();
             fos.close();
@@ -3983,7 +4077,7 @@ public class TWEngine {
           }
         }
         catch (IOException e) {
-          console.warn(e.getMessage());
+          console.warn("Copy failed: "+e.getMessage());
           return false;
         }
       }
@@ -4246,6 +4340,31 @@ public class TWEngine {
       return isAndroid() ? 10000 : (int)f.length();
     }
     
+    public String duplicateFile(String path) {
+      return duplicateFile(path, path);
+    }
+    
+    public String duplicateFile(String path, String newPath) {
+      String ext = "";
+      String filename = getFilename(newPath);
+      if (filename.contains(".")) ext = "."+getExt(filename);
+      
+      String name = getIsolatedFilename(filename);
+      String dir = directorify(getDir(newPath));
+      String copyPath = dir+name+" - copy";
+      while (exists(copyPath+ext)) {
+        copyPath += " - copy";
+      }
+      copyPath += ext;
+      
+      if (copy(path, copyPath)) {
+        return copyPath;
+      }
+      else {
+        return null;
+      }
+    }
+    
     public boolean isImage(String path) {
       String ext = getExt(path);
       if (ext.equals("png")
@@ -4253,10 +4372,20 @@ public class TWEngine {
         || ext.equals("jpeg")
         || ext.equals("bmp")
         || ext.equals("gif")
-        || ext.equals("ico")
-        || ext.equals("webm")
+        //|| ext.equals("webm")
         || ext.equals("tiff")
         || ext.equals("tif"))
+        return true;
+      else
+        return false;
+    }
+    
+    public boolean isAudioFile(String path) {
+      String ext = getExt(path);
+      if (ext.equals("wav")
+        || ext.equals("mp3")
+        || ext.equals("flac")
+        || ext.equals("ogg"))
         return true;
       else
         return false;
@@ -4362,8 +4491,7 @@ public class TWEngine {
         || ext.equals("jpeg")
         || ext.equals("bmp")
         || ext.equals("gif")
-        || ext.equals("ico")
-        || ext.equals("webm")
+        //|| ext.equals("webm")
         || ext.equals("tiff")
         || ext.equals("tif")) return FileType.FILE_TYPE_IMAGE;
   
@@ -4416,6 +4544,22 @@ public class TWEngine {
       
       if (name.charAt(0) == '.') name = name.substring(1);
       return dir+name;
+    }
+    
+    // Returns full path with renamed if duplicate (e.g. duplicate (1).png, duplicate (2).png etc)
+    public String duplicateCheck(String path) {
+      String dir = file.directorify(getDir(path));
+      String filename = getIsolatedFilename(path);
+      String ext = getExt(path);
+      
+      String newpath = path;
+      int i = 1;
+      while (exists(newpath)) {
+        newpath = dir+filename+" ("+i+")."+ext;
+        i++;
+      }
+      
+      return newpath;
     }
   
     // Opens the dir and populates the currentFiles list.
@@ -4707,7 +4851,9 @@ public class TWEngine {
             int[] dimensions = { width, height };
             return dimensions;
         } else {
-            throw new IOException("Not a valid PNG image");
+          // Not a valid PNG
+          int[] someValue = {0, 0};
+          return someValue;
         }
     }
 
@@ -4734,6 +4880,7 @@ public class TWEngine {
     
     public int getPNGUncompressedSize(String path) {
       try {
+        
         int[] widthheight = getPNGImageDimensions(path);
         int wi = widthheight[0];
         int hi = widthheight[1];
@@ -4783,7 +4930,9 @@ public class TWEngine {
                 }
             } else {
               stream.close();
-                throw new IOException("Not a valid JPEG image");
+              // Not a valid JPEG
+              int[] someValue = {0, 0};
+              return someValue;
             }
     }
 
@@ -4859,13 +5008,14 @@ public class TWEngine {
       else if (ext.equals("bmp")) {
         return getBMPUncompressedSize(path);
       }
-      else if (ext.equals("tiff")) {
+      else if (ext.equals("tiff") || ext.equals("ico") || ext.equals("webm")) {
         // TODO: size estimation for tiff
-        return 99999;
+        return 0;
       }
       else {
         console.bugWarn("getImageUncompressedSize: file format ("+ext+" is not an image format.");
-        return Integer.MAX_VALUE;
+        //return Integer.MAX_VALUE;
+        return 0;
       }
     }
   }
@@ -5635,7 +5785,7 @@ public class TWEngine {
     
     // First, load the essential stuff.
     
-    //loadAsset(APPPATH+SOUND_PATH()+"intro.wav");
+    loadAsset(APPPATH+SOUND_PATH()+"intro.wav");
     loadAsset(APPPATH+IMG_PATH()+"logo.png");
     loadAllAssets(APPPATH+IMG_PATH()+"loadingmorph/");
     // We need to load shaders on the main thread.
@@ -5688,6 +5838,9 @@ public class TWEngine {
     // Create dummy screen
     dummyScreen = new DummyScreen(this);
     
+    // I'm sorry this is here. But I don't know where else to put it.
+    dummySpriteSystem = new SpriteSystem(this);
+    
     // Init loading screen.
     currScreen = screen;
   }
@@ -5711,14 +5864,15 @@ public class TWEngine {
 
   public void displayInputPrompt() {
     if (inputPromptShown) {
+      
+      promptInput = input.getTyping(promptInput, false);
+      
       if (input.upOnce) {
         if (lastInput.length() > 0) {
           promptInput = lastInput;
-          input.cursorX = promptInput.length();
+          input.cursorX = lastInput.length();
         }
       }
-      
-      promptInput = input.getTyping(promptInput);
       
       float buttonwi = 200;
       boolean button = ui.basicButton("Enter", display.WIDTH/2-buttonwi/2, display.HEIGHT/2+50, buttonwi, 50f);
@@ -5728,8 +5882,8 @@ public class TWEngine {
         //if (input.keyboardMessage.length() <= 0) return;
         // Remove enter character at end
         if (promptInput.length() > 0) {
-          int ll = max(promptInput.length()-1, 0);   // Don't allow it to go lower than 0
-          if (promptInput.charAt(ll) == '\n') promptInput = promptInput.substring(0, ll);
+          //int ll = max(promptInput.length()-1, 0);   // Don't allow it to go lower than 0
+          //if (promptInput.charAt(ll) == '\n') promptInput = promptInput.substring(0, ll);
         }
         doWhenPromptSubmitted.run();
         lastInput = promptInput;
@@ -5896,6 +6050,14 @@ public class TWEngine {
     }
   }
     
+    
+  public int getMaxMemKB() {
+    long maxRam = TWEngine.MAX_RAM_NORMAL;
+    if (lowMemory) {
+      maxRam = TWEngine.MAX_RAM_LIMITED;
+    }
+    return (int)(maxRam/1024L);
+  }
   
 
     
@@ -6100,7 +6262,7 @@ public class TWEngine {
       textFont(DEFAULT_FONT, 30);
       text("Downloading...", x1-wi+128, y1+10, wi*2-128, hi);
       textSize(20);
-      text("You can continue using "+getAppName()+" while updating.", x1-wi+128, y1+50, wi*2-128, hi);
+      text("You can continue using Timeway while updating.", x1-wi+128, y1+50, wi*2-128, hi);
       // Process bar
       fill(0, 127);
       rect(x1-wi+128+10, y1+hi-15, (float(downloadPercent)/100.)*((wi*2)-128-30), 3);
@@ -6161,7 +6323,7 @@ public class TWEngine {
       textFont(DEFAULT_FONT, 30);
       text("Extracting...", x1-wi+128, y1+10, wi*2-128, hi);
       textSize(20);
-      text(getAppName()+" will restart in the new version shortly.", x1-wi+128, y1+50, wi*2-128, hi);
+      text("Timeway will restart in the new version shortly.", x1-wi+128, y1+50, wi*2-128, hi);
       
       downloadPercent = completionPercent.get();
       // Process bar
@@ -6193,14 +6355,14 @@ public class TWEngine {
           if (f.exists()) {
             updatePhase = 0;
             //Process p = Runtime.getRuntime().exec(newVersion);
-            String cmd = "start \""+getAppName()+"\" /d \""+file.getDir(newVersion).replaceAll("/", "\\\\")+"\" \""+file.getFilename(newVersion)+"\"";
+            String cmd = "start \"Timeway\" /d \""+file.getDir(newVersion).replaceAll("/", "\\\\")+"\" \""+file.getFilename(newVersion)+"\"";
             console.log(cmd);
             runExecutableCommand(cmd);
             delay(500);
             exit();
           }
           else {
-            console.warn("New version of "+getAppName()+" could not be found, please close "+getAppName()+" and open new version manually.");
+            console.warn("New version of Timeway could not be found, please close "+getAppName()+" and open new version manually.");
             console.log("The new version should be somewhere in "+newVersion);
             updatePhase = 0;
           }
@@ -6330,8 +6492,8 @@ public class TWEngine {
   
   public void toggleUnfocusedMusic() {
     playWhileUnfocused = !playWhileUnfocused;
-    if (playWhileUnfocused) console.log("Background music (while focused) enabled.");
-    else console.log("Background music (while focused) disabled.");
+    if (playWhileUnfocused) console.log("Minimized background music enabled.");
+    else console.log("Minimized background music disabled.");
   }
 
 
@@ -6585,12 +6747,12 @@ public class TWEngine {
       boolean update = true;
       try {
         update &= updateInfo.getString("type", "").equals("update");
-        update &= !updateInfo.getString("version", "").equals(VERSION);
+        update &= !updateInfo.getString("version", "").equals(getVersion());
         JSONArray compatibleVersion = updateInfo.getJSONArray("compatible-versions");
 
         boolean compatible = false;
         for (int i = 0; i < compatibleVersion.size(); i++) {
-          compatible |= compatibleVersion.getString(i).equals(VERSION);
+          compatible |= compatibleVersion.getString(i).equals(getVersion());
         }
         compatible |= updateInfo.getBoolean("update-if-incompatible", false);
         compatible |= updateInfo.getBoolean("update-if-uncompatible", false);    // Oops I made a typo at one point
@@ -6651,8 +6813,6 @@ public class TWEngine {
     private boolean force = false;
     public boolean debugInfo = false;
     PFont consoleFont;
-    public BasicUI basicui;
-    private boolean enableBasicUI = false;
 
     private class ConsoleLine {
       private int interval = 0;
@@ -6665,16 +6825,7 @@ public class TWEngine {
         interval = 0;
         this.message = "";
         this.pos = initialPos;
-        basicui = new BasicUI();
       }
-
-      //public void enableUI() {
-      //  enableBasicUI = true;
-      //}
-
-      //public void disableUI() {
-      //  enableBasicUI = false;
-      //}
 
       public void move() {
         this.pos++;
@@ -6795,9 +6946,6 @@ public class TWEngine {
 
     public void display(boolean doDisplay) {
       if (doDisplay) {
-        //pushMatrix();
-        //scale
-        //popMatrix();
         for (int i = 0; i < totalLines; i++) {
           this.consoleLine[i].display();
         }
@@ -6847,9 +6995,6 @@ public class TWEngine {
     }
     public void warn(String message) {
       this.consolePrint("WARNING "+message, color(255, 200, 30));
-      //if (enableBasicUI) {
-      //  this.basicui.showWarningWindow(message);
-      //}
     }
     public void bugWarn(String message) {
       this.consolePrint("BUG WARNING "+message, color(255, 102, 102));
@@ -6885,71 +7030,6 @@ public class TWEngine {
       if (this.timeout == 0)
         this.info(message);
       this.timeout = messageDelay;
-    }
-  }
-
-
-
-  // BasicUI class part of the console class.
-  // Might go unused. It was part of the sketchypad
-  // project in order to provide warnings to dumb people.
-  class BasicUI {
-
-
-    public BasicUI() {
-    }
-
-    private boolean displayingWindow = false;
-    private float offsetX = 0, offsetY = 0;
-    private float radius = 30;
-    private String message = "hdasklfhwea ewajgf awfkgwe fehwafg eawhjfgew ajfghewafg jehwafgghaf hewafgaehjfgewa fg aefhjgew fgewafg egaf ghewaf egwfg ewgfewa fhgewf e wgfgew afgew fg egafwe fg egwhahjfgsd asdnfv eahfhedhajf gweahj fweghf";
-
-    private void warningWindow() {
-      offsetX = sin(frameCount)*radius;
-      offsetY = cos(frameCount)*radius;
-
-      radius *= 0.90;
-
-      stroke(0);
-      strokeWeight(4);
-      fill(200);
-      rect(200+offsetX, 300+offsetY, display.WIDTH-400, display.HEIGHT-500);
-      fill(color(255, 127, 0));
-      rect(200+offsetX, 200+offsetY, display.WIDTH-400, 100);
-
-      noStroke();
-
-      textAlign(CENTER, CENTER);
-      textSize(62);
-      fill(255);
-      text("WARNING!!", display.WIDTH/2+offsetX, 240+offsetY);
-
-      textAlign(LEFT, LEFT);
-
-      textSize(24);
-      fill(0);
-      text(message+"\n\n[press x to dismiss]", 220+offsetX, 320+offsetY, width-440, height-500);
-    }
-
-    public void showWarningWindow(String m) {
-      //sndNope.play();
-      message = m;
-      radius = 50;
-      displayingWindow = true;
-    }
-
-    public boolean displayingWindow() {
-      return displayingWindow;
-    }
-
-    public void stopDisplayingWindow() {
-      displayingWindow = false;
-    }  
-
-    public void display() {
-      if (displayingWindow) {
-        warningWindow();
-      }
     }
   }
 
@@ -7634,6 +7714,7 @@ public class TWEngine {
     // Solid- User must click down then release without moving mouse for this to come true for one frame.
     
     
+    // TODO: add primaryOnceDelayed and etc
     // Mouse & keyboard
     public boolean primaryOnce = false;
     public boolean secondaryOnce = false;
@@ -7677,7 +7758,6 @@ public class TWEngine {
     
     private float cache_mouseX = 0.0;
     private float cache_mouseY = 0.0;
-    public  float scrollOffset = 0.0;
     private float blinkTime = 0.0;
     
     public int keys[]       = new int[1024];
@@ -7725,6 +7805,10 @@ public class TWEngine {
     public static final char CTRL_KEY = 4;
     public static final char ALT_KEY = 5;
     public static final char ALTGR_KEY = 6;
+    public static final char LEFT_KEY = 7;
+    public static final char RIGHT_KEY = 17;
+    public static final char UP_KEY = 12;
+    public static final char DOWN_KEY = 16;
     
     
     public InputModule() {
@@ -7877,11 +7961,16 @@ public class TWEngine {
       // ************TYPING*******************
   
       //*************MOUSE WHEEL*************
-      if (rawScroll != 0) {
-        scroll = rawScroll*-scrollSensitivity;
-      } else {
-        scroll *= 0.5;
-      }
+      //if (rawScroll != 0f) {
+      //} else {
+      //  scroll *= 0.5;
+      //}
+      
+      float scrollData = rawScroll*-scrollSensitivity;
+      
+      final float alpha = 0.20f;
+      scroll = (1.0f - alpha) * scroll + alpha * scrollData;
+      
       rawScroll = 0.;
     }
     
@@ -7901,8 +7990,12 @@ public class TWEngine {
       cursorX = 0;
     }
     
+    //public String getTyping(String str) {
+      
+    //}
     
-    public String getTyping(String str) {
+    
+    public String getTyping(String str, boolean includeEnter) {
       boolean solidifyBlink = true;
       
       if (typingDelay) {
@@ -7931,7 +8024,7 @@ public class TWEngine {
             }
           }
         }
-        else if (upOnce) { 
+        else if (upDown) { 
           // Start of current line
           int startOfCurrLine = str.lastIndexOf('\n', cursorX)+1;
           int dist = cursorX-startOfCurrLine;
@@ -7956,7 +8049,7 @@ public class TWEngine {
             cursorX = startOfPrevLine+dist;
           }
         }
-        else if (downOnce) { 
+        else if (downDown) { 
           // Start of current line
           int startOfThisLine = str.lastIndexOf('\n', cursorX-1)+1;
           int startOfNextLine = str.indexOf('\n', cursorX)+1;
@@ -7965,11 +8058,13 @@ public class TWEngine {
             cursorX = startOfNextLine+dist;
           }
         }
-        else if (backspaceOnce) {
+        else if (backspaceDown) {
           str = backspace(str);
         }
-        else if (enterOnce) {
-          str = insert(str, '\n');
+        else if (enterDown) {
+          if (includeEnter) {
+            str = insert(str, '\n');
+          }
         }
         else if (characterFired >= 32 && characterFired != 127) {
           str = insert(str, characterFired);
@@ -8026,6 +8121,10 @@ public class TWEngine {
     
     public char getLastKeyPressed() {
       return lastKeyPressed;
+    }
+    
+    public boolean anyKeyOnce() {
+      return keyOnce || shiftOnce || ctrlOnce || altOnce || leftOnce || rightOnce || upOnce || downOnce;
     }
   
     // To be called by base sketch code.
@@ -8119,6 +8218,10 @@ public class TWEngine {
       
       int val = int(Character.toLowerCase(k));
       
+      if (val > keys.length) {
+        return false;
+      }
+      
       //if (keys[val] > 0) {
       //  console.log(val);
       //}
@@ -8129,6 +8232,7 @@ public class TWEngine {
   
     public boolean keyAction(String keybindName, char defaultKey) {
       char k = settings.getKeybinding(keybindName, defaultKey);
+      
       
       // Special keys/buttons
       if (k == LEFT_CLICK)
@@ -8143,6 +8247,14 @@ public class TWEngine {
         return this.altDown;
       else if (k == ALTGR_KEY)
         return this.altgrDown;
+      else if (k == UP_KEY)
+        return this.upDown;
+      else if (k == DOWN_KEY)
+        return this.downDown;
+      else if (k == LEFT_KEY)
+        return this.leftDown;
+      else if (k == RIGHT_KEY)
+        return this.rightDown;
       else 
         // Otherwise just tell us if the key is down or not
         return keyDown(k);
@@ -8157,6 +8269,7 @@ public class TWEngine {
   
     public boolean keyActionOnce(String keybindName, char defaultKey) {
       char k = settings.getKeybinding(keybindName, defaultKey);
+      //println(keybindName, int(settings.getKeybinding(keybindName, defaultKey)), int(defaultKey));
       
       boolean val = false;
       
@@ -8172,6 +8285,18 @@ public class TWEngine {
       }
       else if (k == ALTGR_KEY) {
         val = this.altgrOnce;
+      }
+      else if (k == UP_KEY) {
+        val = this.upOnce;
+      }
+      else if (k == DOWN_KEY) {
+        val =  this.downOnce;
+      }
+      else if (k == LEFT_KEY) {
+        val =  this.leftOnce;
+      }
+      else if (k == RIGHT_KEY) {
+        val =  this.rightOnce;
       }
       else if (k == ALT_KEY) {
         val = this.altOnce;
@@ -8270,6 +8395,18 @@ public class TWEngine {
         case ALTGR_KEY:
         text = "Alt Gr";
         break;
+        case UP_KEY:
+        text = "Up arrow";
+        break;
+        case DOWN_KEY:
+        text = "Down arrow";
+        break;
+        case LEFT_KEY:
+        text = "Left arrow";
+        break;
+        case RIGHT_KEY:
+        text = "Right arrow";
+        break;
         case CTRL_KEY:
         text = "Ctrl";
         break;
@@ -8298,50 +8435,41 @@ public class TWEngine {
     
     // TODO: This is old code. Need I say more?
     // It's also broken af.
-    public void processScroll(float top, float bottom) {
+    public float processScroll(float scrollOffset, float top, float bottom, boolean active) {
       final float ELASTIC_MAX = 100.;
       
-      if (scroll != 0.0) {
+      float localScroll = scroll;
+      if (!active) {
+         localScroll = 0f;
+      }
+      
+      if (localScroll != 0.0) {
         power.setAwake();
       }
       else {
         power.setSleepy();
       }
       
-      int n = 1;
-      switch (power.getPowerMode()) {
-            case HIGH:
-            n = 1;
-            break;
-            case NORMAL:
-            n = 2;
-            break;
-            case SLEEPY:
-            n = 4;
-            break;
-            case MINIMAL:
-            n = 1;
-            break;
+      if (scrollOffset > top) {
+          scrollOffset -= (scrollOffset-top)*0.1f*display.getDelta();
+          if (localScroll < 0.0) scrollOffset += localScroll*display.getDelta();
+          else scrollOffset += localScroll*(max(0.0, ((ELASTIC_MAX+top)-scrollOffset)/ELASTIC_MAX))*display.getDelta();
       }
-      
-      // Sorry not sorry
-      for (int i = 0; i < n; i++) {
-        if (scrollOffset > top) {
-            scrollOffset -= (scrollOffset-top)*0.1;
-            if (input.scroll < 0.0) scrollOffset += input.scroll;
-            else scrollOffset += input.scroll*(max(0.0, ((ELASTIC_MAX+top)-scrollOffset)/ELASTIC_MAX));
-        }
-        else if (-scrollOffset > bottom) {
-            // TODO: Actually get some pen and paper and make the elastic band edge work.
-            // This is just a placeholder so that it's usable.
-            scrollOffset = -bottom;
+      else if (-scrollOffset > bottom) {
           
-            //scrollOffset += (bottom-scrollOffset)*0.1;
-            //if (engine.scroll > 0.0) scrollOffset += engine.scroll;
-            //else scrollOffset += engine.scroll*(max(0.0, ((-scrollOffset)-(ELASTIC_MAX+bottom))/ELASTIC_MAX));
-        }
-        else scrollOffset += input.scroll;
+          // Finally completed the algorithm 2.5 years later.
+          scrollOffset += (-(scrollOffset+bottom))*0.1f*display.getDelta();
+          if (localScroll > 0.0) scrollOffset += localScroll*display.getDelta();
+          else scrollOffset += localScroll*max(0f, ((scrollOffset+bottom)+ELASTIC_MAX)/ELASTIC_MAX)*display.getDelta();
       }
+      else scrollOffset += localScroll*display.getDelta();
+      
+      return scrollOffset;
+    }
+    
+    
+    public float processScroll(float scrollOffset, float top, float bottom) {
+      return processScroll(scrollOffset, top, bottom, true);
     }
     
     
@@ -8393,21 +8521,25 @@ public class TWEngine {
             leftDownCounter = 0;
             leftDown = true;
             keyFired = true;
+            lastKeyPressed = LEFT_KEY;
             break;
           case RIGHT:
             rightDownCounter = 0;
             rightDown = true;
             keyFired = true;
+            lastKeyPressed = RIGHT_KEY;
             break;
           case UP:
             upDownCounter = 0;
             upDown = true;
             keyFired = true;
+            lastKeyPressed = UP_KEY;
             break;
           case DOWN:
             downDownCounter = 0;
             downDown = true;
             keyFired = true;
+            lastKeyPressed = DOWN_KEY;
             break;
           case BACKSPACE:
             backspaceDown = true;
@@ -8868,9 +9000,9 @@ public class TWEngine {
 public abstract class Screen {
   protected final float UPPER_BAR_WEIGHT = 50;
   protected final float LOWER_BAR_WEIGHT = 50;
-  protected final color UPPER_BAR_DEFAULT_COLOR = color(200);
-  protected final color LOWER_BAR_DEFAULT_COLOR = color(200);
-  protected final color DEFAULT_BACKGROUND_COLOR = color(50);
+  protected final color UPPER_BAR_DEFAULT_COLOR = color(205,200,215);
+  protected final color LOWER_BAR_DEFAULT_COLOR = color(205,200,215);
+  protected final color DEFAULT_BACKGROUND_COLOR = color(52,50,56);
 
   protected final int NONE = 0;
   protected final int START = 1;
@@ -8899,6 +9031,7 @@ public abstract class Screen {
   protected color myBackgroundColor = DEFAULT_BACKGROUND_COLOR;
   protected float myUpperBarWeight = UPPER_BAR_WEIGHT;
   protected float myLowerBarWeight = LOWER_BAR_WEIGHT;
+  public    boolean clearPreviousScreens = false;
   
   protected float WIDTH = 0.;
   protected float HEIGHT = 0.;
@@ -9029,6 +9162,10 @@ public abstract class Screen {
       engine.power.setAwake();
     }
     //printStack();
+  }
+  
+  protected void noReturn() {
+    clearPreviousScreens = true;
   }
 
 
@@ -9288,6 +9425,7 @@ public final class SpriteSystem {
             
             public int spriteOrder;
             public boolean allowResizing = true;
+            public boolean clicked = false;
             
             public float repositionDragStartX;
             public float repositionDragStartY;
@@ -9994,7 +10132,7 @@ public final class SpriteSystem {
             }
             catch (NullPointerException e) {
                 //if (!suppressSpriteWarning)
-                //    console.bugWarn("Sprite "+name+" does not exist.");
+                    //console.bugWarn("Sprite "+name+" does not exist.");
                 return unusedSprite;
             }
         }
@@ -10098,7 +10236,7 @@ public final class SpriteSystem {
         }
 
         public void emptySpriteStack() {
-            spritesStack.empty();
+            spritesStack.clear();
         }
 
         private void renderSprite(Sprite s) {
@@ -10232,6 +10370,18 @@ public final class SpriteSystem {
             this.sprite(nameAndID, nameAndID);
           }
         }
+        
+        public void offMoveSprite(String identifier, float x, float y) {
+          if (engine.display.phoneMode) {
+            identifier += "-phone";
+          }
+          
+          if (!spriteExists(identifier)) {
+              addSprite(identifier, "nothing");
+            }
+            Sprite s = getSprite(identifier);
+            s.offmove(x, y);
+        }
 
         public void spriteVary(String identifier, String image) {
           if (engine.display.phoneMode) {
@@ -10353,7 +10503,7 @@ public final class SpriteSystem {
                       }
                   }
                   selectedSprite = highestSelected;
-                  selectedSprites.empty();
+                  selectedSprites.clear();
                 }
             }
             
@@ -10451,7 +10601,13 @@ public final class SpriteSystem {
           return top+1; 
       }
       
-      public void empty() {
+      public void clear() {
+          top = -1;
+      }
+      
+      // Destroys the objects in the stack instead of simply setting the top variable.
+      public void hardClear() {
+          S = new Object[capacity];
           top = -1;
       }
   
@@ -10480,6 +10636,223 @@ public final class SpriteSystem {
         return (Iterator<T>)Arrays.asList(S).iterator();
       }
     
+    }
+    
+    // --- Linked list stuff ---
+    class ItemSlot<T> {
+        public ItemSlot next = null;
+        public ItemSlot prev = null;
+        public T carrying = null;
+        public float val = 0.;
+    
+        public ItemSlot(T o) {
+          this.carrying = o;
+        }
+    
+        //public void remove() {
+        //  if (this == head)
+        //    head = this.next;
+    
+        //  if (this == tail)
+        //    tail = this.prev;
+    
+        //  if (this == inventorySelectedItem) {
+        //    inventorySelectedItem = this.prev;
+        //    if (inventorySelectedItem == null) 
+        //      inventorySelectedItem = this.next;
+        //    // Will be null as intended if next is null too.
+        //    // i.e., the item just removed happens to be the last item in the inventory.
+        //  }
+    
+        //  if (this.prev != null)
+        //    this.prev.next = this.next;
+    
+        //  if (this.next != null)
+        //    this.next.prev = this.prev;
+        //}
+    
+        //public void addAfterMe(ItemSlot newNode) {
+    
+        //  ItemSlot prev = this;
+        //  ItemSlot next = this.next;
+    
+        //  newNode.next = next;
+        //  newNode.prev = prev;
+        //  if (next != null) next.prev = newNode;
+        //  prev.next = newNode;
+    
+        //  if (this == tail) {
+        //    tail = prev;
+        //  }
+        //}
+    
+        //public void addEnd() {
+        //  if (head == null) {  
+        //    head = this;
+        //    tail = this;
+        //    head.prev = null;
+        //    tail.next = null;
+        //    inventorySelectedItem = this;
+        //  } else {  
+        //    //add newNode to the end of list. tail->next set to newNode  
+        //    tail.next = this;  
+        //    //newNode->previous set to tail  
+        //    this.prev = tail;  
+        //    //newNode becomes new tail  
+        //    tail = this;  
+        //    //tail's next point to null  
+        //    tail.next = null;
+        //  }
+        //  inventorySelectedItem = this;
+        //}
+      }
+    
+    class LinkedList<T> implements Iterable<T> {
+      private int operationCount = 0;
+      public ItemSlot<T> head = null;
+      public ItemSlot<T> tail = null;
+      public ItemSlot<T> inventorySelectedItem = null;
+      
+      @Override
+      public Iterator<T> iterator() {
+          return new LinkedListIterator();
+      }
+  
+      private class LinkedListIterator implements Iterator<T> {
+          private ItemSlot<T> current;
+  
+          public LinkedListIterator() {
+              this.current = head;
+          }
+  
+          @Override
+          public boolean hasNext() {
+              return current != null;
+          }
+  
+          @Override
+          public T next() {
+              if (!hasNext()) {
+                  throw new java.util.NoSuchElementException();
+              }
+              T value = current.carrying;
+              current = current.next;
+              return value;
+          }
+      }
+      
+      ItemSlot itCurr = null;
+      
+      //public T next() { 
+      //  ItemSlot tmp = itCurr;
+      //  itCurr = itCurr.next;
+      //  return tmp.carrying;
+      //} 
+      
+      //public boolean hasNext() {
+      //  return itCurr != null;
+      //}
+    
+      public ItemSlot add(T o) {
+        ItemSlot node = new ItemSlot(o);
+        this.add(node);
+        return node;
+      }
+      
+      public ItemSlot add(ItemSlot node) {
+        if (head == null) {  
+          head = tail = node;
+          head.prev = null;
+          tail.next = null;
+        } else {  
+          //add newNode to the end of list. tail->next set to newNode  
+          tail.next = node;  
+          //newNode->previous set to tail  
+          node.prev = tail;  
+          //newNode becomes new tail  
+          tail = node;  
+          //tail's next point to null  
+          tail.next = null;
+        }  
+        return node;
+      }
+      
+    
+      public ItemSlot remove(ItemSlot node) {
+        if (node == head)
+          head = node.next;
+    
+        if (node == tail)
+          tail = node.prev;
+    
+        if (node.prev != null)
+          node.prev.next = node.next;
+    
+        if (node.next != null)
+          node.next.prev = node.prev;
+    
+        // Object should be dereferenced now.
+        return node;
+      }
+      
+      public void remove(T object) {
+        ItemSlot current = head;
+        while (current != null) {
+          if (current.carrying == object) {
+            remove(current);
+            return;
+          }
+          current = current.next;
+        }
+        throw new RuntimeException("Could not remove item; not found in LinkedList");
+      }
+      
+      public void insertionSort() {
+        operationCount = 0;
+        if (head == null || head.next == null) {
+          return; // List is empty or has only one element, so it is already sorted
+        }
+    
+        ItemSlot current = head.next; // Node to be inserted into the sorted portion
+    
+        while (current != null) {
+          ItemSlot nextNode = current.next; // Store the next node before modifying current.next
+    
+          boolean run = true;
+          while (current.prev != null && run) {
+            operationCount++;
+            if (current.prev.val < current.val) {
+              // Swap them.
+              ItemSlot previous = current.prev;
+              ItemSlot next = current.next;
+    
+              previous.next = next;
+              current.prev = previous.prev;
+              current.next = previous;
+    
+              if (previous.prev != null) {
+                previous.prev.next = current;
+              }
+              previous.prev = current;
+              if (next != null) {
+                next.prev = previous;
+              }
+    
+              if (head == previous) {
+                head = current;
+              }
+              if (tail == current) {
+                tail = previous;
+              }
+            } else run = false;
+          }
+    
+          current = nextNode; // Move to the next node
+        }
+    
+        //if (head == null) console.bugWarn("Null head!");
+        //if (tail == null) console.bugWarn("Null tail!");
+      }
     }
 
 

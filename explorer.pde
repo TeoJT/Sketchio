@@ -32,6 +32,7 @@ public class Explorer extends Screen {
   //DisplayableFile backButtonDisplayable = null;
   SpriteSystem gui;
   private float scrollBottom = 0.0;
+  private float scrollOffset = 0f;
   
   public Explorer(TWEngine engine) {
         super(engine);
@@ -71,32 +72,24 @@ public class Explorer extends Screen {
     
     app.textFont(engine.DEFAULT_FONT, 50);
     app.textSize(TEXT_SIZE);
-    
-    float y = 150 + input.scrollOffset;
-    
     for (int i = 0; i < file.currentFiles.length; i++) {
       float textHeight = app.textAscent() + app.textDescent();
       float x = 50;
       float wi = TEXT_SIZE + 20;
+      float y = 150 + i*TEXT_SIZE+scrollOffset;
       
       // Sorry not sorry
       try {
         if (file.currentFiles[i] != null) {
-          
-          // Super hacky thing to only display folders and sketchio files.
-          if (!file.currentFiles[i].fileext.equals(engine.SKETCHIO_EXTENSION) && !file.currentFiles[i].isDirectory()) {
-            continue;
-          }
-          
-          if (!engine.inputPromptShown && engine.mouseX() > x && engine.mouseX() < x + app.textWidth(file.currentFiles[i].filename) + wi && engine.mouseY() > y && engine.mouseY() < textHeight + y) {
+          if (engine.mouseX() > x && engine.mouseX() < x + app.textWidth(file.currentFiles[i].filename) + wi && engine.mouseY() > y && engine.mouseY() < textHeight + y) {
             // if mouse is overing over text, change the color of the text
             app.fill(100, 0, 255);
             app.tint(100, 0, 255);
             // if mouse is hovering over text and left click is pressed, go to this directory/open the file
             if (input.primaryOnce) {
               if (file.currentFiles[i].isDirectory())
-                input.scrollOffset = 0.;
-                
+                scrollOffset = 0.;
+              
               file.open(file.currentFiles[i]);
             }
           } else {
@@ -117,11 +110,9 @@ public class Explorer extends Screen {
       catch (NullPointerException ex) {
         
       }
-      
-      y += TEXT_SIZE;
     }
     
-    scrollBottom = max(0, (y+BOTTOM_SCROLL_EXTEND));
+    scrollBottom = max(0, (file.currentFiles.length*TEXT_SIZE-HEIGHT+BOTTOM_SCROLL_EXTEND));
   }
     
   
@@ -244,7 +235,7 @@ public class Explorer extends Screen {
         ui.loadingIcon(WIDTH/2, HEIGHT/2);
       }
       else {
-        input.processScroll(0., scrollBottom+1.0);
+        scrollOffset = input.processScroll(scrollOffset, 0., scrollBottom+1.0);
         renderDir();
       }
       
