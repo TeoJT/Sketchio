@@ -1,0 +1,17 @@
+{
+  "h": 64,
+  "vy0": 411,
+  "vx1": 480,
+  "vy2": 475,
+  "vx0": 416,
+  "vy1": 411,
+  "mode": "SINGLE",
+  "vx3": 416,
+  "vx2": 480,
+  "vy3": 475,
+  "w": 64,
+  "name": "configpane-length",
+  "x": 416,
+  "y": 411,
+  "locked": false
+}

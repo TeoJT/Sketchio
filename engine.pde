@@ -1840,6 +1840,7 @@ public class TWEngine {
         }
         else {
           for (int i = 0; i < opts.length; i++) {
+            if (opts[i] == null) continue;
             options.add(opts[i]);
             actions.add(acts[i]);
             float wi = app.textWidth(opts[i]);
@@ -7755,6 +7756,7 @@ public class TWEngine {
     private float holdKeyFrames = 0.;
     private boolean keyFired = false;
     private boolean typingDelay = false;
+    public int typingActive = 0;
     
     private float cache_mouseX = 0.0;
     private float cache_mouseY = 0.0;
@@ -7898,6 +7900,14 @@ public class TWEngine {
   
       //*************KEYBOARD*************
       
+      // If nobody's listening to any typing, then why are there fire flags set true?? Set em false.
+      if (typingActive <= 0) {
+        keyFired = false;
+      }
+      else {
+        typingActive--;
+      }
+      
       // Oneshot key control
       for (int i = 0; i < 1024; i++) {
         if (keys[i] > 0) {
@@ -7994,9 +8004,15 @@ public class TWEngine {
       
     //}
     
+    public boolean typingActive() {
+      return typingActive > 0;
+    }
+    
     
     public String getTyping(String str, boolean includeEnter) {
       boolean solidifyBlink = true;
+      
+      typingActive = 2;
       
       if (typingDelay) {
         typingDelay = false;
@@ -9261,7 +9277,7 @@ public final class SpriteSystem {
         public ArrayList<Sprite> sprites;
         public Sprite selectedSprite;
         public Stack<Sprite> spritesStack;
-        private int newSpriteX = 0, newSpriteY = 0, newSpriteZ = 0;
+        private int newSpriteX = 100, newSpriteY = 100, newSpriteZ = 0;
         public Sprite unusedSprite;
         public TWEngine engine;
         public PApplet app;

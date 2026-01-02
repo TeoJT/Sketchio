@@ -1,0 +1,17 @@
+{
+  "h": 81,
+  "vy0": 197,
+  "vx1": 570,
+  "vy2": 325,
+  "vx0": 442,
+  "vy1": 197,
+  "mode": "SINGLE",
+  "vx3": 442,
+  "vx2": 570,
+  "vy3": 325,
+  "w": 81,
+  "name": "automationpane-lerp",
+  "x": 442,
+  "y": 197,
+  "locked": false
+}

@@ -1,0 +1,17 @@
+{
+  "h": 64,
+  "vy0": 343,
+  "vx1": 538,
+  "vy2": 407,
+  "vx0": 474,
+  "vy1": 343,
+  "mode": "SINGLE",
+  "vx3": 474,
+  "vx2": 538,
+  "vy3": 407,
+  "w": 64,
+  "name": "configpane-antialias",
+  "x": 474,
+  "y": 343,
+  "locked": false
+}

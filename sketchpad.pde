@@ -88,6 +88,7 @@ public class Sketchpad extends Screen {
   private Pane activePaneObject = null; // This variable is technically a bit redundant since we already have activePane, but it helps to have
                                         // have it there so we can access any pane object.
   private Pane draggingPane = null;
+  private Pane priorityPane = null;     // When this is set, only one pane, the one set in priorityPane, will be shown.
   private float paneStartDragX;
   private float paneStartDragY;
   
@@ -106,6 +107,10 @@ public class Sketchpad extends Screen {
   
   // Panes
   TestPane testPane = null;
+  ConfigPane configPane = null;
+  AutomationTypeSelectPane automationTypeSelectPane = null;
+  AutomationNamePane automationNamePane = null;
+  Pane renderingPane = null; // For both RenderOptionsPane and RenderingPane
   
   
   private String[] defaultCode = {
@@ -165,6 +170,7 @@ public class Sketchpad extends Screen {
     public boolean display(float yFromBottom) {
       BOTTOM_Y = HEIGHT-myLowerBarWeight;
       TOP_Y = BOTTOM_Y-yFromBottom-getHeight();
+      RIGHT_X = WIDTH;
       
       float y = TOP_Y;
       
@@ -178,7 +184,7 @@ public class Sketchpad extends Screen {
       app.fill(255);
       app.textAlign(LEFT, TOP);
       app.textSize(LABEL_HEIGHT-10f);
-      app.text(name, 5, y+5);
+      app.text(name == null ? "null" : name, 5, y+5);
       app.text(nf(getFloatVal(time), 0, 3), RIGHT_X*0.4f, y+5);
       
       boolean colorpickerClicked = ui.buttonImg("nothing", RIGHT_X*0.5f, y, LABEL_HEIGHT, LABEL_HEIGHT);
@@ -278,16 +284,24 @@ public class Sketchpad extends Screen {
       return engine.noise(ttime*0.1);
     }
     
+    public float timeLength() {
+      return timeLength*60f;
+    }
+    
+    public float time() {
+      return time*60f;
+    }
+    
     public float getActualX(float pointV) {
-      float normalizedX = pointV/timeLength;
-      float TOTAL_WIDTH = timeLength*autoBarZoom;
-      float tt = time/timeLength;
+      float normalizedX = pointV/timeLength();
+      float TOTAL_WIDTH = timeLength()*autoBarZoom;
+      float tt = time()/timeLength();
       float offX = (RIGHT_X/2f)-tt*TOTAL_WIDTH;
       
       float x = (normalizedX)*TOTAL_WIDTH;
       
-      float posToTime_prev = (prev_x/TOTAL_WIDTH)*timeLength;
-      float posToTime = (x/TOTAL_WIDTH)*timeLength;
+      float posToTime_prev = (prev_x/TOTAL_WIDTH)*timeLength();
+      float posToTime = (x/TOTAL_WIDTH)*timeLength();
       
       float prev_y = TOP_Y+myHeight*(1f-getFloatVal(posToTime_prev));
       float y = TOP_Y+myHeight*(1f-getFloatVal(posToTime));
@@ -300,14 +314,21 @@ public class Sketchpad extends Screen {
     
     private float prev_x = 0f;
     protected float plotLine(float normalizedX, boolean showVal) {
-      float TOTAL_WIDTH = timeLength*autoBarZoom;
-      float tt = (time)/timeLength;
+      float TOTAL_WIDTH = timeLength()*autoBarZoom;
+      float tt = (time())/timeLength();
       float offX = (RIGHT_X/2f)-tt*TOTAL_WIDTH;
       
       float x = (normalizedX)*TOTAL_WIDTH;
       
-      float posToTime_prev = (prev_x/TOTAL_WIDTH)*timeLength;
-      float posToTime = (x/TOTAL_WIDTH)*timeLength;
+      float posToTime_prev = (prev_x/TOTAL_WIDTH)*timeLength();
+      float posToTime = (x/TOTAL_WIDTH)*timeLength();
+      
+      // Honestly, I have no idea what any of this code I wrote does.
+      // All I know is that these two lines I added below are a working bug fix.
+      // Because timeLength and time used to be frames (1 sec = 60), now they're in seconds.
+      // So I guess these two variables were stuck in frames or something.
+      posToTime_prev /= 60f;
+      posToTime /= 60f;
       
       float prev_y = TOP_Y+myHeight*(1f-getFloatVal(posToTime_prev));
       float y = TOP_Y+myHeight*(1f-getFloatVal(posToTime));
@@ -340,18 +361,18 @@ public class Sketchpad extends Screen {
     }
     
     protected float screenXToTime(float x) {
-      float TOTAL_WIDTH = timeLength*autoBarZoom;
-      float tt = (time)/timeLength;
+      float TOTAL_WIDTH = timeLength()*autoBarZoom;
+      float tt = (time())/timeLength();
       float offX = (RIGHT_X/2f)-tt*TOTAL_WIDTH;
       float val = (x-offX)/TOTAL_WIDTH;
-      float xx = val*timeLength;
+      float xx = val*timeLength();
       
       return xx;
     }
     
     protected float normalizedXToScreenX(float normalizedX) {
-      float TOTAL_WIDTH = timeLength*autoBarZoom;
-      float tt = (time)/timeLength;
+      float TOTAL_WIDTH = timeLength()*autoBarZoom;
+      float tt = time()/timeLength();
       float offX = (RIGHT_X/2f)-tt*TOTAL_WIDTH;
       
       float x = (normalizedX)*TOTAL_WIDTH;
@@ -370,16 +391,16 @@ public class Sketchpad extends Screen {
       
       float framesPerX = quartersVisible ? sound.framesPerQuarter() : sound.framesPerBeat();
       
-      int l = (int)(timeLength/framesPerX)+1;
+      int l = (int)(timeLength()/framesPerX)+1;
       for (int i = 0; i < l; i++) {
-        float x = normalizedXToScreenX((framesPerX*float(i))/timeLength);
+        float x = normalizedXToScreenX((framesPerX*float(i))/timeLength());
         
         if (input.mouseX() > x-BEATSNAP_THRESHOLD && input.mouseX() < x+BEATSNAP_THRESHOLD) {
           closestBeatSnap = screenXToTime(x);
         }
         
         if (quartersVisible && i % 4 != 0) {
-          app.stroke(100, 100);
+          app.stroke(200, 100);
           app.strokeWeight(1f);
         }
         else {
@@ -387,7 +408,10 @@ public class Sketchpad extends Screen {
           app.strokeWeight(3f);
         }
         
-        app.line(x, TOP_Y, x, BOTTOM_Y);
+        
+        if (x > 0f && x < RIGHT_X) {
+          app.line(x, TOP_Y, x, BOTTOM_Y);
+        }
       }
     }
     
@@ -452,7 +476,7 @@ public class Sketchpad extends Screen {
       // (Except the last point)
       ArrayList<Point> pointsToDelete = new ArrayList<Point>();
       for (int i = 0; i < points.size(); i++) {
-        if (points.get(i).t > timeLength && i != points.size()-1) {
+        if (points.get(i).t > timeLength() && i != points.size()-1) {
           pointsToDelete.add(points.get(i));
         }
       }
@@ -462,7 +486,7 @@ public class Sketchpad extends Screen {
       
       // Move last point to the new time position
       if (points.size() > 0) {
-        points.get(points.size()-1).t = timeLength;
+        points.get(points.size()-1).t = timeLength();
       }
     }
     
@@ -471,11 +495,12 @@ public class Sketchpad extends Screen {
     // Do it the lazy way cus I can't be bothered with a big algorithm.
     // Select an approximate point and then backtrace until we find a point between our float val.
     public float getFloatVal(float ttime, boolean countiterations) {
+      ttime *= 60f;
       // Calc approx
       int l = points.size();
-      int index = min((int)((ttime/timeLength)*((float)l)), l-1);
+      int index = min((int)((ttime/timeLength())*((float)l)), l-1);
       
-      if (ttime >= timeLength-0.0002) {
+      if (ttime >= timeLength()-0.0002) {
         return points.get(l-1).val;
       }
       
@@ -592,7 +617,7 @@ public class Sketchpad extends Screen {
     }
     
     public void load(JSONObject json) {
-      this.name = json.getString("name");
+      this.name = json.getString("name", "null");
       this.mycolor = json.getInt("color", color(0,0,0));
       this.snapping = json.getBoolean("snapping", false);
       this.beatsVisible = json.getBoolean("beats_visible", false);
@@ -647,7 +672,7 @@ public class Sketchpad extends Screen {
       // Must have at least 2 points
       if (points.size() == 0) {
         points.add(new Point(0f, 0.5f));
-        points.add(new Point(timeLength, 0.5f));
+        points.add(new Point(timeLength(), 0.5f));
       }
       
       float lineSelectorX = input.mouseX()-RECTWIHI;
@@ -675,7 +700,7 @@ public class Sketchpad extends Screen {
         Point point = points.get(i);
         
         // Now render said line from prev to current.
-        float x = plotLine(point.t/timeLength, true);
+        float x = plotLine(point.t/timeLength(), true);
         
         // Physical x/y position of the point to render on the screen.
         float actualX = x-HALFWIHI;
@@ -792,9 +817,9 @@ public class Sketchpad extends Screen {
                 // Limit dragging x pos to next and prev point's position.
                 float MICRO_OFFSET = 0.025;
                 float minx = 0f;
-                float maxx = timeLength;
+                float maxx = timeLength();
                 
-                float nextT = timeLength;
+                float nextT = timeLength();
                 float prevT = -1;
                 
                 if (i-1 >= 0) {
@@ -865,9 +890,10 @@ public class Sketchpad extends Screen {
   private TextField selectedField = null;
   
   private class TextField {
-    private String spriteName = "";
+    protected String spriteName = "";
     public String value = "";
-    private String labelDisplay = "";
+    protected String labelDisplay = "";
+    public boolean interactable = true;
     
     final float MIN_FIELD_VISIBLE_SIZE = 150f;
     final float EXPAND_HITBOX = 10f;
@@ -879,7 +905,7 @@ public class Sketchpad extends Screen {
       updateDimensions();
     }
     
-    private  void updateDimensions() {
+    protected void updateDimensions() {
       app.textFont(engine.DEFAULT_FONT, 24f);
       float textww = app.textWidth(labelDisplay+" ");
       float inputfield = app.textWidth(value+" ");
@@ -889,13 +915,17 @@ public class Sketchpad extends Screen {
         gui.hackSpriteDimensions(gui.getSprite(spriteName), int(ww), int((app.textAscent()+app.textDescent())+EXPAND_HITBOX+6f));
       }
     }
+    
+    protected boolean click() {
+      return gui.getSprite(spriteName).mouseWithinHitbox() && input.primaryOnce && !input.mouseMoved && interactable && !ui.miniMenuShown() && !gui.interactable;
+    }
         
     
     public void display() {
       gui.sprite(spriteName, "nothing");
       SpriteSystem.Sprite sprite = gui.getSprite(spriteName);
       
-      if (sprite.mouseWithinHitbox() && input.primaryOnce && !input.mouseMoved) {
+      if (click()) {
           engine.allowShowCommandPrompt = false;
           selectedField = this;
           input.cursorX = value.length();
@@ -932,44 +962,82 @@ public class Sketchpad extends Screen {
       app.text(displayText, x, y);
       
       //app.rect(sprite.getX(), sprite.getY(), sprite.getWidth(), sprite.getHeight());
+    }
+  }
+  
+  
+  // Extending cus I can't be bothered copy+pasting or re-typing out everything.
+  private class OptionsField extends TextField {
+    
+    public String[] options;
+    
+    public OptionsField(String spriteName, String labelDisplay, String defaultVal, String... options) {
+      super(spriteName, labelDisplay);
+      this.options = options;
+      value = defaultVal;
+      updateDimensions();
+    }
+    
+    public void display() {
+      gui.sprite(spriteName, "nothing");
+      SpriteSystem.Sprite sprite = gui.getSprite(spriteName);
       
+      if (click()) {
+        Runnable[] actions = new Runnable[options.length];
+        
+        for (int i = 0; i < options.length; i++) {
+          final String finalOption = options[i];
+          actions[i] = new Runnable() {public void run() {
+              value = finalOption;
+              updateDimensions();
+          }};
+        }
+        
+        ui.createOptionsMenu(options, actions);
+      }
+      
+      
+      app.textAlign(LEFT, TOP);
+      app.textFont(engine.DEFAULT_FONT, 24f);
+
+      String displayText = labelDisplay+" "+value;
+      
+      float x = sprite.xpos;
+      float y = sprite.ypos-app.textDescent()+EXPAND_HITBOX/2f+10f;
+      app.stroke(255f);
+      app.strokeWeight(1f);
+      app.fill(0f, 200f);
+      float boxx = x+app.textWidth(labelDisplay+" ")-10f;
+      float boxwi = PApplet.max(app.textWidth(value)+30f, MIN_FIELD_VISIBLE_SIZE)+EXPAND_HITBOX*2f+10f;
+      app.rect(boxx, y-EXPAND_HITBOX, boxwi, sprite.getHeight());
+      
+      display.img("down_triangle_64", boxx+boxwi-sprite.getHeight(), y, sprite.getHeight()-20f, sprite.getHeight()-20f);
+      app.fill(255f);
+      app.text(displayText, x, y);
+      
+      //app.rect(sprite.getX(), sprite.getY(), sprite.getWidth(), sprite.getHeight());
     }
   }
   
   
   
   
-  public boolean textSprite(String name, String val, float textSize) {
-    String disp = gui.interactable ? "white" : "nothing";
-    boolean clicked = ui.buttonVary(name, disp, "");
-    
-    float x = gui.getSpriteVary(name).getX();
-    float y = gui.getSpriteVary(name).getY();
-    float wi = gui.getSpriteVary(name).getWidth();
-    float hi = gui.getSpriteVary(name).getHeight();
-    
-    app.textAlign(LEFT, TOP);
-    app.textSize(textSize);
-    app.text(val, x, y, wi, hi);
-    return clicked;
-  }
-  
-  public boolean textSprite(String name, String val) {
-    return textSprite(name, val, 32);
-  }
   
   
   
   
   
   private class Pane {
-    private String windowName = "";
-    private int paneID = -1;
-    private float xpos = 50f;
-    private float ypos = 50f;
+    public String windowName = "";
+    public int paneID = -1;
+    protected float xpos = 50f;
+    protected float ypos = 50f;
+    protected float paneWi = 0f;
+    protected float paneHi = 0f;
     private float originalXpos = xpos;
     private float originalYpos = ypos;
     private HashMap<String, TextField> textFields = new HashMap<String, TextField>();
+    public boolean showXButton = true;
     
     
     public Pane(String name, float x, float y) {
@@ -983,10 +1051,14 @@ public class Sketchpad extends Screen {
       originalYpos = ypos;
     }
     
-    private void bringToFront() {
+    public void bringToFront() {
       // Easy way to do this.
       panes.remove(this);
       panes.add(this);
+    }
+    
+    protected boolean enter() {
+      return (input.enterOnce && !engine.commandPromptShown && activePane == paneID);
     }
     
     // TODO: several of the same sprites being called at once is problematic.
@@ -996,7 +1068,7 @@ public class Sketchpad extends Screen {
       boolean value = ui.button(name, texture, displayText);
       gui.getSprite(name).offmove(xpos-originalXpos, ypos-originalYpos);
       
-      if (activePane == paneID) {
+      if (activePane == paneID && !gui.interactable) {
         return value;
       }
       else {
@@ -1004,18 +1076,79 @@ public class Sketchpad extends Screen {
       }
     }
     
+    public TextField getField(String name) {
+      TextField f = textFields.get(name);
+      if (f == null) {
+        console.bugWarn("getField: Field "+name+" doesn't exist!");
+        return new TextField("dummy-textField", "null");
+      }
+      return f;
+    }
+    
     public TextField textField(String name, String label, String defaultValue) {
+      // Create if non-existant (first run)
       if (!textFields.containsKey(name)) {
         TextField f = new TextField(name, label);
         textFields.put(name, f);
         f.value = defaultValue;
       }
       
+      // Move with the window
       gui.getSprite(name).offmove(xpos-originalXpos, ypos-originalYpos);
+      
+      // Display the field.
       TextField field = textFields.get(name);
+      field.interactable = (activePane == paneID);
       field.display();
+      
+      // Return it.
       return field;
     }
+    
+    public OptionsField optionsField(String name, String label, String defaultValue, String... options) {
+      // Create if non-existant (first run)
+      if (!textFields.containsKey(name)) {
+        OptionsField f = new OptionsField(name, label, defaultValue, options);
+        textFields.put(name, f);
+      }
+      
+      // Move with the window
+      gui.getSprite(name).offmove(xpos-originalXpos, ypos-originalYpos);
+      
+      // Display the field.
+      // Yes, textFields is used to store TextField but since it extends TextField it can also be used to store OptionsField.
+      // Quick PSA on design: really you should use an interface rather than inheritance. But I'm lazy and want to save some
+      // duplicated code, so that's why I'm doing it here.
+      OptionsField field = (OptionsField)textFields.get(name);
+      field.interactable = (activePane == paneID);
+      field.display();
+      
+      // Return it.
+      return field;
+    }
+    
+    
+    
+    public void textSprite(String name, String val, float textSize) {
+      String disp = gui.interactable ? "text_sprite_debug_mask" : "nothing";
+      gui.getSprite(name).offmove(xpos-originalXpos, ypos-originalYpos);
+      gui.sprite(name, disp);
+      
+      float x = gui.getSprite(name).getX();
+      float y = gui.getSpriteVary(name).getY();
+      float wi = gui.getSpriteVary(name).getWidth();
+      float hi = gui.getSpriteVary(name).getHeight();
+      
+      app.textAlign(LEFT, TOP);
+      app.textFont(engine.DEFAULT_FONT, textSize);
+      app.text(val, x, y, wi, hi);
+    }
+    
+    public void textSprite(String name, String val) {
+      textSprite(name, val, 24f);
+    }
+    
+    
     
     public void display() {
       final float TAB_BAR_HEIGHT = 25f;
@@ -1023,8 +1156,8 @@ public class Sketchpad extends Screen {
       // Display invisible sprite for the window width/height.
       gui.getSprite("window-"+windowName).move(xpos, ypos+TAB_BAR_HEIGHT);
       gui.sprite("window-"+windowName, "nothing");
-      float wi = gui.getSprite("window-"+windowName).getWidth();
-      float hi = gui.getSprite("window-"+windowName).getHeight();
+      paneWi = gui.getSprite("window-"+windowName).getWidth();
+      paneHi = gui.getSprite("window-"+windowName).getHeight();
       
       // Give it a coloured border if the pane is chosen.
       if (activePane == paneID) {
@@ -1048,15 +1181,15 @@ public class Sketchpad extends Screen {
       // Dragging pane
       if (draggingPane == this) {
         // Max/min keeps it within draggable area.
-        xpos = max(min(input.mouseX()-paneStartDragX, WIDTH-30f), -wi+TAB_BAR_HEIGHT+30f);
+        xpos = max(min(input.mouseX()-paneStartDragX, WIDTH-30f), -paneWi+TAB_BAR_HEIGHT+30f);
         ypos = max(min(input.mouseY()-paneStartDragY, HEIGHT-myLowerBarWeight-TAB_BAR_HEIGHT), myUpperBarWeight);
         if (!input.primaryDown) {
           draggingPane = null;
         }
       }
       
-      boolean mouseInTabBar = (activePane == paneID) && ui.mouseInArea(xpos, ypos, wi, TAB_BAR_HEIGHT);
-      boolean mouseInXButton = (activePane == paneID) && ui.mouseInArea(xpos+wi-TAB_BAR_HEIGHT, ypos, TAB_BAR_HEIGHT, TAB_BAR_HEIGHT);
+      boolean mouseInTabBar = (activePane == paneID) && ui.mouseInArea(xpos, ypos, paneWi, TAB_BAR_HEIGHT);
+      boolean mouseInXButton = (activePane == paneID) && ui.mouseInArea(xpos+paneWi-TAB_BAR_HEIGHT, ypos, TAB_BAR_HEIGHT, TAB_BAR_HEIGHT) && showXButton;
       
       // Tab bar
       if (mouseInTabBar && !mouseInXButton) {
@@ -1066,34 +1199,36 @@ public class Sketchpad extends Screen {
           paneStartDragX = input.mouseX()-xpos;
           paneStartDragY = input.mouseY()-ypos;
         }
-        app.fill(40f, 200f);
+        app.fill(40f, 230f);
       }
       else {
-        app.fill(0f, 200f);
+        app.fill(0f, 230f);
       }
-      app.rect(xpos, ypos, wi, TAB_BAR_HEIGHT);
+      app.rect(xpos, ypos, paneWi, TAB_BAR_HEIGHT);
       
       // Pane background
-      app.fill(0f, 150f);
-      app.rect(xpos, ypos+TAB_BAR_HEIGHT, wi, hi);
+      app.fill(0f, 220f);
+      app.rect(xpos, ypos+TAB_BAR_HEIGHT, paneWi, paneHi);
       
       // Close button (cancels)
-      app.noStroke();
-      if (mouseInXButton) {
-        app.fill(245f, 80f, 80f, 200f);
-        // Clicking it closes the pane (obviously)
-        if (input.primaryOnce) {
-          closeCancel();
+      if (showXButton) {
+        app.noStroke();
+        if (mouseInXButton) {
+          app.fill(245f, 80f, 80f, 200f);
+          // Clicking it closes the pane (obviously)
+          if (input.primaryOnce) {
+            closeCancel();
+          }
         }
+        else {
+          app.fill(225f, 40f, 40f, 200f);
+        }
+        app.rect(xpos+paneWi-TAB_BAR_HEIGHT, ypos, TAB_BAR_HEIGHT, TAB_BAR_HEIGHT);
       }
-      else {
-        app.fill(225f, 40f, 40f, 200f);
-      }
-      app.rect(xpos+wi-TAB_BAR_HEIGHT, ypos, TAB_BAR_HEIGHT, TAB_BAR_HEIGHT);
       
       
       // try to claim active pane.
-      if (ui.mouseInArea(xpos, ypos, wi, TAB_BAR_HEIGHT+hi)) {
+      if (ui.mouseInArea(xpos, ypos, paneWi, TAB_BAR_HEIGHT+paneHi)) {
         tryClaimActivePane(paneID);
       }
     }
@@ -1101,16 +1236,29 @@ public class Sketchpad extends Screen {
     public void closeCancel() {
       panes.remove(this);
       activePaneObject = null;
+      if (priorityPane == this) priorityPane = null;
     }
     
     public void closeOK() {
       panes.remove(this);
+      if (priorityPane == this) priorityPane = null;
     }
   }
   
   private Pane newPane(Pane pane) {
     panes.add(pane);
+    forceSetActivePane(pane.paneID);
     return pane;
+  }
+  
+  private void forceSetActivePane(int paneid) {
+    if (sprites != null) sprites.selectedSprite = null;
+    
+    activePane = paneid;
+    
+    // Set it to null for the fixed, non-object panes. Don't worry, our pane object will realise it's the chosen one
+    // and will set this variable accordingly.
+    activePaneObject = null;
   }
   
   private void removePane(Pane pane) {
@@ -1132,9 +1280,13 @@ public class Sketchpad extends Screen {
   
   
   
+  
+  
+  
+  
   private class TestPane extends Pane {
     public TestPane() {
-      super("Config", 400f, 500f);
+      super("Test", 400f, 500f);
     }
     
     public void display() {
@@ -1148,8 +1300,442 @@ public class Sketchpad extends Screen {
       }
       
       textField("panetest-field", "Item name: ", "[default]");
+      textField("panetest-field-2", "Max size (MB): ", "10");
+      
+      optionsField("panetest-Options1", "Graphics API: ", "OpenGL",  /*Options>>*/  "OpenGL", "Vulkan", "WebGPU", "A very long option with loads of text");
     }
   }
+  
+  
+  
+  
+  private class ConfigPane extends Pane {
+    
+    private String[] musicFiles = null;
+    
+    public ConfigPane() {
+      super("Config", 400f, 200f);
+      
+      // Get list of music
+      if (file.exists(sketchiePath+"music")) {
+        File[] files = (new File(sketchiePath+"music")).listFiles();
+        musicFiles = new String[files.length+1];
+        musicFiles[0] = "(None)";
+        
+        for (int i = 0; i < files.length; i++) {
+          musicFiles[i+1] = files[i].getName();
+        }
+      }
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      // TODO: Bring back shader selection
+      
+      // Shader selection
+      //String shaderDisp = selectedShader;
+      //if (shaderDisp.length() == 0) shaderDisp = "(None)";
+      //if (textSprite("config-shader", "Post-processing shader: "+shaderDisp) && !ui.miniMenuShown()) {
+        
+      //  ///////////////////
+      //  // SHADERS
+        
+      //  // TODO: BAD
+      //  String shaderPath = "";
+      //  if (file.exists(sketchiePath+"shaders")) shaderPath = sketchiePath+"shaders";
+      //  if (file.exists(sketchiePath+"shader")) shaderPath = sketchiePath+"shader";
+        
+      //  // Shader path
+      //  if (shaderPath.length() > 0) {
+      //    // List out all the files, get each image.
+      //    File[] sh = (new File(shaderPath)).listFiles();
+      //    String[] loadedShaders = new String[sh.length];
+      //    for (int i = 0; i < sh.length; i++) {
+      //      File f = sh[i];
+            
+      //      String fullPath = f.getAbsolutePath().replaceAll("\\\\", "/");
+      //      String ext = file.getExt(fullPath);
+      //      String name = file.getIsolatedFilename(fullPath);
+            
+      //      if (ext.equals("glsl") || ext.equals("vert")) {
+      //        display.loadShader(fullPath);
+      //        loadedShaders[i] = name;
+      //      }
+      //      else {
+      //        loadedShaders[i] = name+" (invalid)";
+      //      }
+      //      // GLSL shaders are loaded with vert shaders.
+      //    }
+          
+      //    if (loadedShaders.length > 0) {
+      //      String[] labels = new String[loadedShaders.length+1];
+      //      Runnable[] actions = new Runnable[loadedShaders.length+1];
+            
+      //      // None option
+      //      labels[0] = "(None)";
+      //      actions[0] = new Runnable() {public void run() { selectedShader = ""; }};
+            
+      //      for (int i = 0; i < loadedShaders.length; i++) {
+      //        final int index = i;
+      //        labels[i+1]  = loadedShaders[i];
+      //        actions[i+1] = new Runnable() {
+      //          public void run() { 
+      //            selectedShader = loadedShaders[index]; 
+      //          }
+      //        };
+      //      }
+            
+      //      ui.createOptionsMenu(labels, actions);
+      //    }
+      //  }
+      //}
+      
+      
+    }
+    
+    public void display() {
+      super.display();
+      
+      // Width/height fields
+      textField("configpane-width", "Width (pixels): ", str(canvas.width));
+      textField("configpane-height", "Height (pixels): ", str(canvas.height));
+      
+      textField("configpane-length", "Video length (secs):", str(timeLength));
+      
+      if (button("configpane-musictimesync", "music_time_128", "Set to length of music")) {
+        getField("configpane-length").value = str(sound.getCurrentMusicDuration());
+      }
+      
+      // Anti-aliasing field
+      String smoothDisp = "";
+      switch (canvasSmooth) {
+        case 0:
+        smoothDisp = "None (pixelated)";
+        break;
+        case 1:
+        smoothDisp = "x1";
+        break;
+        case 2:
+        smoothDisp = "x2";
+        break;
+        case 4:
+        smoothDisp = "x4";
+        break;
+        case 8:
+        smoothDisp = "x8";
+        break;
+      }
+      
+      optionsField("configpane-antialias", "Anti-aliasing: ", smoothDisp,  /*Options>>*/ "None (pixelated)", "x1", "x2", "x4", "x8");
+      
+      // Music selection field
+      optionsField("configpane-music", "Music: ", selectedMusic.equals("") ? "(None)" : selectedMusic, /*Options>>*/ musicFiles);
+      
+      // BPM field
+      textField("configpane-bpm", "BPM: ", str(bpm));
+      
+      // Apply button
+      if (button("configpane-ok", "tick_128", "Apply") || enter()) {
+        try {
+          int wi = Integer.parseInt(getField("configpane-width").value);
+          int hi = Integer.parseInt(getField("configpane-height").value);
+          timeLength = Float.parseFloat(getField("configpane-length").value);
+          resizeAutomationBarTimes();
+          bpm = Float.parseFloat(getField("configpane-bpm").value);
+          sound.setBPM(bpm);
+          
+          selectedMusic = getField("configpane-music").value.equals("(None)") ? "" : getField("configpane-music").value;
+          
+          boolean smoothChangesMade = false;
+          String antialiasVal = getField("configpane-antialias").value;
+          int newCanvasSmooth = -1;
+          if (antialiasVal.equals("None (pixelated)"))  newCanvasSmooth = 0;
+          else if (antialiasVal.equals("x1")) newCanvasSmooth = 1;
+          else if (antialiasVal.equals("x2")) newCanvasSmooth = 2;
+          else if (antialiasVal.equals("x4")) newCanvasSmooth = 4;
+          else if (antialiasVal.equals("x8")) newCanvasSmooth = 8;
+          
+          if (newCanvasSmooth != canvasSmooth) {
+            canvasSmooth = newCanvasSmooth;
+            smoothChangesMade = true;
+          }
+          
+          
+          // Only recreate if changes have been made.
+          if (wi != (int)canvas.width ||
+              hi != (int)canvas.height ||
+              smoothChangesMade
+          ) {
+            createCanvas(wi, hi, canvasSmooth);
+          }
+        }
+        catch (NumberFormatException e) {
+          console.log("Invalid inputs!");
+          return;
+        }
+        //setMusic(selectedMusic);
+        
+        
+        saveConfig();
+        
+        closeOK();
+      }
+    }
+  }
+  
+  
+  private static final int AUTOMATION_LINEAR = 1;
+  
+  private class AutomationTypeSelectPane extends Pane {
+    
+    public AutomationTypeSelectPane() {
+      super("Automation selection type", 400f, 100f);
+    }
+    
+    public void display() {
+      super.display();
+      
+      // Title
+      textSprite("automationpane-type-text", "Select automation type:");
+      
+      
+      if (button("automationpane-lerp", "automation_lerp_128", "Linear")) {
+        closeOK();
+        
+        removePane(automationNamePane);
+        automationNamePane = new AutomationNamePane(AUTOMATION_LINEAR, xpos, ypos);
+        newPane(automationNamePane);
+      }
+      
+      button("automationpane-unkown", "unknown_128", "More types coming soon!");
+      
+    }
+  }
+  
+  
+  private class AutomationNamePane extends Pane {
+    private int selectedAutomationType = 0;
+    
+    public AutomationNamePane(int automationType, float x, float y) {
+      super("Automation selection name", 400, 200);
+      xpos = x;
+      ypos = y;
+      selectedAutomationType = automationType;
+    }
+    
+    public void display() {
+      super.display();
+      
+      // Text
+      textSprite("automationpane-name-text", "Create name for automation bar:");
+      
+      // Input field
+      textField("automationpane-name-input", "Name: ", "");
+      
+      // OK Button
+      if (button("automationpane-name-ok", "tick_128", "OK") || enter()) {
+        String name = getField("automationpane-name-input").value;
+        
+        // Name check
+        if (name.length() == 0) {
+          console.log("Invalid name!");
+          sound.playSound("nope");
+        }
+        
+        // Existing item check
+        else if (automationBars.containsKey(name)) {
+          console.log(name+" already exists!");
+          sound.playSound("nope");
+        }
+        
+        // Name invalid.
+        else {
+          
+          // Now for each automation bar type.
+          switch (selectedAutomationType) {
+            
+            // Linear
+            case AUTOMATION_LINEAR:
+            LerpAutomationBar bar = new LerpAutomationBar(name);
+            automationBars.put(name, bar);
+            addAutomationBarToDisplay(bar);
+            break;
+            
+            // Error
+            default:
+            console.bugWarn("Unknown automation type "+selectedAutomationType);
+            closeCancel();
+            return;
+            
+            
+          }
+          closeOK();
+        }
+        
+      }
+    }
+  }
+  
+  
+  private class RenderOptionsPane extends Pane {
+    
+    public RenderOptionsPane() {
+      super("Render", 350f, 150f);
+    }
+    
+    public void display() {
+      super.display();
+      
+      // Framerate field
+      textField("renderpane-framerate", "Framerate: ", "60");
+      
+      optionsField("renderpane-format", "File type: ", "MPEG-4",  
+      /*Options>>*/ 
+      "MPEG-4", 
+      "MPEG-4 (Lossless 4:2:0)", 
+      "MPEG-4 (Lossless (4:4:4)", 
+      "Apple ProRes 4444", 
+      "Animated GIF",
+      "Animated GIF (Loop)");
+      
+      optionsField("renderpane-scale", "Pixel scale: ", "100% (No scaling)",  /*Options>>*/ "25%", "50%", "100% (No scaling)", "200%", "300%", "400%");
+      
+      
+      // Render info
+      // Size estimations for rendering (per frame):
+      //400% 16mb
+      //300% 9mb
+      //200% 4mb
+      //100% 1mb
+      //50% 0.25mb
+      //25% 0.0625mb
+      //
+      // Formula = width * height * 4 * scale * timeLength * framespersecond 
+      //
+      try {
+        float framerate = Float.parseFloat(getField("renderpane-framerate").value);
+        long requiredSize = (long)(canvas.width*upscalePixels)*(long)(canvas.height*upscalePixels)*4L*(long)( (timeLength)*framerate);
+        int sizemb = int(requiredSize/(1024L*1024L));
+        float sizegb = float(sizemb)/1024f;
+        String renderInfo = "This render requires "+nf(sizegb, 0, 1)+"GB of free disk space.";
+        textSprite("renderpane-info1", renderInfo, 16f);
+      }
+      catch (NumberFormatException e) {
+        
+      }
+      
+      
+      // Start rendering button
+      if (button("renderpane-ok", "tick_128", "Start rendering")) {
+        renderFormat = getField("renderpane-format").value;
+        
+        String pixelscale = getField("renderpane-scale").value;
+        if (pixelscale.equals("25%")) upscalePixels = 0.25f;
+        else if (pixelscale.equals("50%")) upscalePixels = 0.5f;
+        else if (pixelscale.equals("100% (No scaling)")) upscalePixels = 1.0f;
+        else if (pixelscale.equals("200%")) upscalePixels = 2.0f;
+        else if (pixelscale.equals("300%")) upscalePixels = 3.0f;
+        else if (pixelscale.equals("400%")) upscalePixels = 4.0f;
+        
+        try {
+          renderFramerate = Float.parseFloat(getField("renderpane-framerate").value);
+        }
+        catch (NumberFormatException e) {
+          console.log("Invalid inputs!");
+          sound.playSound("nope");
+          return;
+        }
+        
+        beginRendering();
+        
+        closeOK();
+        
+        removePane(renderingPane);
+        renderingPane = new RenderingPane();
+        newPane(renderingPane);
+        priorityPane = renderingPane;
+        
+      }
+      
+      
+    }
+  }
+  
+  
+  
+  
+  
+  private class RenderingPane extends Pane {
+    public RenderingPane() {
+      super("Rendering...", 400f, 150f);
+      showXButton = false;
+    }
+    
+    private void percentageBar(float completion) {
+      SpriteSystem.Sprite s = gui.getSprite("renderinginfopane-percentage");
+      app.noStroke();
+      app.fill(58, 60, 65);
+      app.rect(s.getX(), s.getY(), s.getWidth(), s.getHeight());
+      
+      app.fill(30f, 190f, 90f);
+      app.rect(s.getX(), s.getY(), s.getWidth()*completion, s.getHeight());
+      
+      textSprite("renderinginfopane-percentage", "" /*int(completion*100f)+"%"*/, 40f);
+      
+    }
+    
+    public void display() {
+      super.display();
+      ui.loadingIcon(xpos+paneWi/2f, ypos+paneHi/2f);
+      
+      
+      // We have one for stage 1 and stage 2
+      if (!converting) {
+        textSprite("renderinginfopane-txt1", "Rendering...\nStage 1/2");
+        
+        percentageBar(time/timeLength);
+        
+        if (button("renderinginfopane-cancel", "cross_128", "Stop rendering")) {
+          cancelRendering();
+          closeCancel();
+        }
+      }
+      else {
+        textSprite("renderinginfopane-txt1", 
+        "Converting to "+renderFormat+"...\n"+
+        "Stage 2/2\n"+
+        "("+ffmpeg.framecount+"/"+renderFrameCount+")");
+        
+        percentageBar((float)ffmpeg.framecount/(float)renderFrameCount);
+        
+        
+        if (button("renderinginfopane-cancel", "cross_128", "Stop rendering")) {
+          cancelRendering();
+          cancelConversion();
+          closeCancel();
+        }
+        
+        if (ffmpeg.framecount >= renderFrameCount) {
+          closeOK();
+        }
+      }
+      
+    }
+  }
+  
+  
+  
+  
+  
+  
+  
+  
   
   
   
@@ -1183,6 +1769,10 @@ public class Sketchpad extends Screen {
     
     ffmpeg = new FFmpegEngine();
     
+    myUpperBarColor = 0xFF3B3A47;
+    myLowerBarColor = 0xFF3B3A47;
+    myBackgroundColor = 0xFF0E0D0F;
+    
     //sound.streamMusic(engine.APPPATH+"engine/music/test.mp3");
   }
   
@@ -1197,8 +1787,6 @@ public class Sketchpad extends Screen {
   //    }
   //  }
   //}
-  
-  
   
   
   
@@ -1647,10 +2235,6 @@ public class Sketchpad extends Screen {
     }
     
     
-    if ((activePane == CANVAS_PANE) && input.keyActionOnce("playPause", ' ')) {
-       togglePlay();
-    }
-    
     
     boolean withinCanvasPane = input.mouseY() < HEIGHT-myLowerBarWeight && input.mouseY() > myUpperBarWeight;
     boolean usingCanvasPane = (activePane == CANVAS_PANE);
@@ -1665,7 +2249,8 @@ public class Sketchpad extends Screen {
     
     // Begin moving around.
     // TODO: middleclick to move too.
-    if (usingCanvasPane && notDraggingSprites && withinCanvasPane) {
+    // !gui.interactable is added to make it less annyoing while moving UI elements on windows.
+    if (usingCanvasPane && notDraggingSprites && withinCanvasPane && !gui.interactable) {
       if (input.primaryOnce && !isDragging) {
         beginDragX = input.mouseX();
         beginDragY = input.mouseY();
@@ -1682,11 +2267,12 @@ public class Sketchpad extends Screen {
         isDragging = false;
       }
     
-      // Sprite selected, then we right-click it
-      // Brings up the menu
-      if (sprites.selectedSprite != null && sprites.selectedSprite.mouseWithinSprite() && input.secondaryOnce && !ui.miniMenuShown()) {
-        showSpriteMenu();
-      }
+    }
+    
+    // Sprite selected, then we right-click it
+    // Brings up the menu
+    if (sprites.selectedSprite != null && sprites.selectedSprite.mouseWithinSprite() && input.secondaryOnce && !ui.miniMenuShown()) {
+      showSpriteMenu();
     }
     
     // Scroll is negative
@@ -1751,411 +2337,6 @@ public class Sketchpad extends Screen {
   
   
   
-  /////////////////////////////////////// 
-  // MENU
-  
-  TextField widthField  = new TextField("config-width", "Width: ");
-  TextField heightField = new TextField("config-height", "Height: ");
-  TextField timeLengthField = new TextField("config-timelength", "Video length: ");
-  TextField framerateField = new TextField("render-framerate", "Framerate: ");
-  TextField bpmField = new TextField("config-bpm", "BPM: ");
-  private boolean smoothChangesMade = false;
-  public void displayMenu() {
-    // Bug fix to prevent sprite being selected as we click the menu.
-    if (!loading.get()) sprites.selectedSprite = null;
-    
-    //////////////////
-    // CONFIG MENU
-    //////////////////
-    if (false) {          // TODO: Config menu
-      
-      // Background
-      gui.spriteVary("config-back-1", "black");
-      
-      // Title
-      textSprite("config-menu-title", "--- Sketch config ---");
-      
-      
-      
-      app.fill(255);
-      
-      // Width field
-      widthField.display();
-      
-      // Height field
-      heightField.display();
-      
-      // Time length field
-      timeLengthField.display();
-      // Lil button next to timelength field to sync time to music
-      if (ui.buttonVary("config-syncmusictime", "music_time_128", "")) {
-        selectedField = null;
-        sound.playSound("select_any");
-        timeLengthField.value = str(sound.getCurrentMusicDuration());
-        //try {
-        //  String musicPath = sketchiePath+"music/"+selectedMusic;
-        //  if (selectedMusic.length() > 0 && file.exists(musicPath)) {
-        //    Movie music = new Movie(app, musicPath);
-        //    music.read();
-        //    timeLengthField.value = str(music.duration());
-        //  }
-        //}
-        //catch (RuntimeException e) {
-        //  console.warn("Sound duration get failed. "+e.getMessage());
-        //}
-      }
-      
-      // Anti-aliasing field
-      String smoothDisp = "Anti-aliasing: ";
-      switch (canvasSmooth) {
-        case 0:
-        smoothDisp += "None (pixelated)";
-        break;
-        case 1:
-        smoothDisp += "1x";
-        break;
-        case 2:
-        smoothDisp += "2x";
-        break;
-        case 4:
-        smoothDisp += "4x";
-        break;
-        case 8:
-        smoothDisp += "8x";
-        break;
-      }
-      
-      if (textSprite("config-smooth", smoothDisp) && !ui.miniMenuShown()) {
-        String[] labels = new String[5];
-        Runnable[] actions = new Runnable[5];
-        
-        labels[0] = "None (pixelated)";
-        actions[0] = new Runnable() {public void run() { canvasSmooth = 0; smoothChangesMade = true; }};
-        
-        labels[1] = "1x anti-aliasing";
-        actions[1] = new Runnable() {public void run() { canvasSmooth = 1; smoothChangesMade = true; }};
-        
-        labels[2] = "2x anti-aliasing";
-        actions[2] = new Runnable() {public void run() { canvasSmooth = 2; smoothChangesMade = true; }};
-        
-        labels[3] = "4x anti-aliasing";
-        actions[3] = new Runnable() {public void run() { canvasSmooth = 4; smoothChangesMade = true; }};
-        
-        labels[4] = "8x anti-aliasing";
-        actions[4] = new Runnable() {public void run() { canvasSmooth = 8; smoothChangesMade = true; }};
-        
-        
-        ui.createOptionsMenu(labels, actions);
-      }
-      
-      
-      // Music selection field
-      
-      // TODO: BAD 
-      if (file.exists(sketchiePath+"music")) {
-        File[] files = (new File(sketchiePath+"music")).listFiles();
-        String[] musicFiles = new String[files.length];
-        for (int i = 0; i < files.length; i++) {
-          musicFiles[i] = files[i].getName();
-        }
-      
-        String musicDisp = (musicFiles.length > 0 ? selectedMusic : "(no files available)");
-        if (selectedMusic.length() == 0) musicDisp = "(None)";
-        if (textSprite("config-music", "Music: "+musicDisp) && !ui.miniMenuShown()) {
-          if (musicFiles.length > 0) {
-            String[] labels = new String[musicFiles.length+1];
-            Runnable[] actions = new Runnable[musicFiles.length+1];
-            
-            // None option
-            labels[0] = "(None)";
-            actions[0] = new Runnable() {public void run() { selectedMusic = ""; }};
-            
-            for (int i = 0; i < musicFiles.length; i++) {
-              final int index = i;
-              labels[i+1]  = musicFiles[i];
-              actions[i+1] = new Runnable() {
-                public void run() { 
-                  selectedMusic = musicFiles[index]; 
-                  setMusic(selectedMusic);
-                }
-              };
-            }
-            
-            ui.createOptionsMenu(labels, actions);
-          }
-        }
-      }
-      
-      // BPM field
-      bpmField.display();
-      
-      // Shader selection
-      String shaderDisp = selectedShader;
-      if (shaderDisp.length() == 0) shaderDisp = "(None)";
-      if (textSprite("config-shader", "Post-processing shader: "+shaderDisp) && !ui.miniMenuShown()) {
-        
-        ///////////////////
-        // SHADERS
-        
-        // TODO: BAD
-        String shaderPath = "";
-        if (file.exists(sketchiePath+"shaders")) shaderPath = sketchiePath+"shaders";
-        if (file.exists(sketchiePath+"shader")) shaderPath = sketchiePath+"shader";
-        
-        // Shader path
-        if (shaderPath.length() > 0) {
-          // List out all the files, get each image.
-          File[] sh = (new File(shaderPath)).listFiles();
-          String[] loadedShaders = new String[sh.length];
-          for (int i = 0; i < sh.length; i++) {
-            File f = sh[i];
-            
-            String fullPath = f.getAbsolutePath().replaceAll("\\\\", "/");
-            String ext = file.getExt(fullPath);
-            String name = file.getIsolatedFilename(fullPath);
-            
-            if (ext.equals("glsl") || ext.equals("vert")) {
-              display.loadShader(fullPath);
-              loadedShaders[i] = name;
-            }
-            else {
-              loadedShaders[i] = name+" (invalid)";
-            }
-            // GLSL shaders are loaded with vert shaders.
-          }
-          
-          if (loadedShaders.length > 0) {
-            String[] labels = new String[loadedShaders.length+1];
-            Runnable[] actions = new Runnable[loadedShaders.length+1];
-            
-            // None option
-            labels[0] = "(None)";
-            actions[0] = new Runnable() {public void run() { selectedShader = ""; }};
-            
-            for (int i = 0; i < loadedShaders.length; i++) {
-              final int index = i;
-              labels[i+1]  = loadedShaders[i];
-              actions[i+1] = new Runnable() {
-                public void run() { 
-                  selectedShader = loadedShaders[index]; 
-                }
-              };
-            }
-            
-            ui.createOptionsMenu(labels, actions);
-          }
-        }
-      }
-      
-      
-      
-      // Cross button
-      if (ui.buttonVary("config-cross-1", "cross", "")) {
-        sound.playSound("select_smaller");
-        //configMenu = false;
-        // TODO: Close config menu
-      }
-      
-      // Apply button
-      if (ui.buttonVary("config-ok", "tick_128", "Apply")) {
-        sound.playSound("select_any");
-        //time = 0.;
-        
-        try {
-          int wi = Integer.parseInt(widthField.value);
-          int hi = Integer.parseInt(heightField.value);
-          timeLength = Float.parseFloat(timeLengthField.value);
-          resizeAutomationBarTimes();
-          bpm = Float.parseFloat(bpmField.value);
-          sound.setBPM(bpm);
-          
-          // Only recreate if changes have been made.
-          if (wi != (int)canvas.width ||
-              hi != (int)canvas.height ||
-              smoothChangesMade
-          ) {
-            createCanvas(wi, hi, canvasSmooth);
-          }
-        }
-        catch (NumberFormatException e) {
-          console.log("Invalid inputs!");
-          return;
-        }
-        //setMusic(selectedMusic);
-        
-        
-        saveConfig();
-        
-        // End
-        //configMenu = false; 
-        // TODO: Config menu close
-      }
-    }
-    
-    
-    /////////////////////
-    // RENDER MENU
-    /////////////////////
-    else if (false) {           // TODO: Render menu
-      
-      // Background
-      gui.spriteVary("render-back-1", "black");
-      
-      // Title
-      textSprite("render-menu-title", "--- Render ---");
-      
-      // Framerate field
-      framerateField.display();
-      
-      // That massive block below is indeed the
-      // compression field.
-      String compressionDisp = "Compression: "+renderFormat;
-      if (textSprite("render-compression", compressionDisp) && !ui.miniMenuShown()) {
-        String[] labels = new String[6];
-        Runnable[] actions = new Runnable[6];
-        
-        labels[0] = "MPEG-4";
-        actions[0] = new Runnable() {public void run() { renderFormat = labels[0]; }};
-        
-        labels[1] = "MPEG-4 (Lossless 4:2:0)";
-        actions[1] = new Runnable() {public void run() { renderFormat = labels[1]; }};
-        
-        labels[2] = "MPEG-4 (Lossless (4:4:4)";
-        actions[2] = new Runnable() {public void run() { renderFormat = labels[2]; }};
-        
-        labels[3] = "Apple ProRes 4444";
-        actions[3] = new Runnable() {public void run() { renderFormat = labels[3]; }};
-        
-        labels[4] = "Animated GIF";
-        actions[4] = new Runnable() {public void run() { renderFormat = labels[4]; }};
-        
-        labels[5] = "Animated GIF (Loop)";
-        actions[5] = new Runnable() {public void run() { renderFormat = labels[5]; }};
-        
-        ui.createOptionsMenu(labels, actions);
-      }
-      
-      // Pixel upscale field
-      String upscaleDisp = "Pixel upscale: "+int(upscalePixels*100.)+"% "+(upscalePixels == 1. ? "(None)" : "");
-      
-      if (textSprite("render-upscale", upscaleDisp) && !ui.miniMenuShown()) {
-        String[] labels = new String[6];
-        Runnable[] actions = new Runnable[6];
-        
-        labels[0] = "25%";
-        actions[0] = new Runnable() {public void run() { upscalePixels = 0.25; }};
-        
-        labels[1] = "50%";
-        actions[1] = new Runnable() {public void run() { upscalePixels = 0.5; }};
-        
-        labels[2] = "100% (None)";
-        actions[2] = new Runnable() {public void run() { upscalePixels = 1.; }};
-        
-        labels[3] = "200%";
-        actions[3] = new Runnable() {public void run() { upscalePixels = 2.; }};
-        
-        labels[4] = "300%";
-        actions[4] = new Runnable() {public void run() { upscalePixels = 3.; }};
-        
-        labels[5] = "400%";
-        actions[5] = new Runnable() {public void run() { upscalePixels = 4.; }};
-        
-        ui.createOptionsMenu(labels, actions);
-      }
-      
-      
-      // Start rendering button
-      if (ui.buttonVary("render-ok", "tick_128", "Start rendering")) {
-        sound.playSound("select_any");
-        try {
-          renderFramerate = Float.parseFloat(framerateField.value);
-        }
-        catch (NumberFormatException e) {
-          console.log("Invalid inputs!");
-          return;
-        }
-        
-        beginRendering();
-        //renderMenu = false;
-        
-        // TODO: Close render menu
-      }
-      
-      // Close menu button
-      if (ui.buttonVary("render-cross-1", "cross", "")) {
-        sound.playSound("select_smaller");
-        //renderMenu = false;
-        // TODO: Close render menu
-      }
-      
-      // Render info
-      {
-        // Size estimations for rendering (per frame):
-        //400% 16mb
-        //300% 9mb
-        //200% 4mb
-        //100% 1mb
-        //50% 0.25mb
-        //25% 0.0625mb
-        //
-        // Formula = width * height * 4 * scale * timeLength * framespersecond 
-        //
-        try {
-          float framerate = Float.parseFloat(framerateField.value);
-          long requiredSize = (long)(canvas.width*upscalePixels)*(long)(canvas.height*upscalePixels)*4L*(long)( (timeLength/display.BASE_FRAMERATE) *framerate);
-          int sizemb = int(requiredSize/(1024L*1024L));
-          float sizegb = float(sizemb)/1024f;
-          String renderInfo = "This render requires "+nf(sizegb, 0, 1)+"GB of free disk space.";
-          textSprite("render-menu-info1", renderInfo, 20f);
-        }
-        catch (NumberFormatException e) {
-          
-        }
-      }
-    }
-    
-    // TODO: Automation bar select menu
-    else if (false) {
-      
-      // Background
-      gui.spriteVary("automation-back-1", "black");
-      
-      // Title
-      textSprite("automation-menu-title", "Select automation type:");
-      
-      // Close menu button
-      if (ui.buttonVary("automation-cross-1", "cross", "")) {
-        sound.playSound("select_smaller");
-        //automationBarSelectMenu = false;
-        
-        // TODO: Close automation bar select menu
-      }
-      
-      // Close menu button
-      if (ui.buttonVary("automation-lerp", "cube_128", "Linear")) {
-        sound.playSound("select_any");
-        //automationBarSelectMenu = false;
-        
-        // TODO: Close automation bar select menu
-        
-        Runnable r = new Runnable() {
-          public void run() {
-            if (engine.promptInput.length() < 1) {
-              console.log("Please enter a valid name!");
-              return;
-            }
-            
-            LerpAutomationBar bar = new LerpAutomationBar(engine.promptInput);
-            automationBars.put(engine.promptInput, bar);
-            addAutomationBarToDisplay(bar);
-          }
-        };
-        
-        engine.beginInputPrompt("Enter name:", r);
-      }
-      
-    }
-  }
   
   public void showError(String mssg) {
     errorLog = mssg;
@@ -2291,6 +2472,9 @@ public class Sketchpad extends Screen {
       scaleCanvas = createGraphics(int(canvas.width*upscalePixels), int(canvas.height*upscalePixels), P2D);
       ((PGraphicsOpenGL)scaleCanvas).textureSampling(2);   // Disable texture smoothing
     }
+    
+    sprites.interactable = false;
+    sprites.selectedSprite = null; // Just in case.
     
     // set our variables
     time = 0.0;
@@ -2460,14 +2644,19 @@ public class Sketchpad extends Screen {
       selectedField = null;
     }
     
-    for (Pane pane : panes) {
-      pane.display();
+    if (priorityPane != null) {
+      priorityPane.display();
+    }
+    else {
+      for (Pane pane : panes) {
+        pane.display();
+      }
     }
   }
   
   
   private float autoBarZoom = 5f;
-  private float autoBarZoomScroll = 1f;
+  private float autoBarZoomScroll = -2000f;
   private int autoBarsZoomPauseTimeout = 60;
   
   
@@ -2529,6 +2718,11 @@ public class Sketchpad extends Screen {
       sound.setCustomMusicTime(time);
       
       
+      if (!input.typingActive() && input.keyActionOnce("playPause", ' ')) {
+         togglePlay();
+      }
+      
+      
       // Run the actual sketchio file's code.
       runCanvas();
       displayCanvas();
@@ -2539,13 +2733,17 @@ public class Sketchpad extends Screen {
       
       boolean mouseInAutomationBarPane = false;
       float y = 0f;
-      for (int i = 0; i < displayAutomationBars.size(); i++) {
-        // Why not just y += displayAutomationBars.get(i).getHeight();?
-        // Because displayAutomationBars.get(i).display may remove bar from displayAutomationBars,
-        // causing an indexoutofbounds afterwards.
-        float hh = displayAutomationBars.get(i).getHeight();
-        mouseInAutomationBarPane |= displayAutomationBars.get(i).display(y);
-        y += hh;
+      
+      // Don't display automation bars while a priority pane is showing.
+      if (priorityPane == null) {
+        for (int i = 0; i < displayAutomationBars.size(); i++) {
+          // Why not just y += displayAutomationBars.get(i).getHeight();?
+          // Because displayAutomationBars.get(i).display may remove bar from displayAutomationBars,
+          // causing an indexoutofbounds afterwards.
+          float hh = displayAutomationBars.get(i).getHeight();
+          mouseInAutomationBarPane |= displayAutomationBars.get(i).display(y);
+          y += hh;
+        }
       }
       
       if (mouseInAutomationBarPane) {
@@ -2558,14 +2756,15 @@ public class Sketchpad extends Screen {
         // it seems to automatically make it shrink.
         // So instead of figuring out why the heck this happens, let's just apply
         // a pause before we can zoom out the bars. EZ.
-        if (autoBarsZoomPauseTimeout <= 0) {
-          
-          
-          autoBarZoomScroll = input.processScroll(autoBarZoomScroll, 0f, 1000f);  // TODO: Configure scroll properly.
-          autoBarZoom = autoBarZoomScroll/500f;
+        if (activePane == AUTOBAR_PANE) {
+          if (autoBarsZoomPauseTimeout <= 0) {
+            autoBarZoomScroll = input.processScroll(autoBarZoomScroll, -100f, 4000f);
+          }
         }
       }
       if (autoBarsZoomPauseTimeout > 0) autoBarsZoomPauseTimeout--;
+      
+      autoBarZoom = -autoBarZoomScroll/500f;
       
       // Show error output.
       if (errorMenu) {
@@ -2610,113 +2809,90 @@ public class Sketchpad extends Screen {
   
   
   public void upperBar() {
-    display.shader("fabric", "color", 0.43,0.4,0.42,1., "intensity", 0.1);
+    display.shader("fabric", "color", red(myUpperBarColor)/255f, green(myUpperBarColor)/255f, blue(myUpperBarColor)/255f, 1.0f, "intensity", 0.02);
     super.upperBar();
     app.resetShader();
     ui.useSpriteSystem(gui);
     
-    // Display UI for rendering
-    if (rendering) {
-      // We have one for stage 1 and stage 2
-      if (!converting) {
-        ui.loadingIcon(WIDTH*0.75, HEIGHT/2);
-        textSprite("renderinginfoscreen-txt1", "Rendering sketch...\nStage 1/2");
-        if (ui.buttonVary("renderinginfoscreen-cancel", "cross_128", "Stop rendering")) {
-          cancelRendering();
-        }
+    if (!rendering && priorityPane == null) {
+      if (ui.button("compile_button", "media_128", "Compile")) {
+        // Don't allow to compile if it's already compiling
+        // (cus we gonna end up with threading issues!)
+        if (!compiling.get()) {
+          sound.playSound("select_any");
+          // If not showing code editor, we are most likely using an external ide to program this.
+          // So do not save what we have in memory.
+          compileCode(loadScript());
+        } 
       }
-      else {
-        ui.loadingIcon(WIDTH*0.75, HEIGHT/2);
-        textSprite("renderinginfoscreen-txt1", 
-        "Converting to "+renderFormat+"...\n"+
-        "Stage 2/2\n"+
-        "("+ffmpeg.framecount+"/"+renderFrameCount+")");
-        
-        // Finish rendering
-        //if (ffmpeg.framecount >= renderFrameCount) {
-        //}
-        
-        // TODO: progress bar?
-        
-        if (ui.buttonVary("renderinginfoscreen-cancel", "cross_128", "Stop rendering")) {
-          cancelRendering();
-          cancelConversion();
-        }
-      }
-    }
-    
-    if (ui.button("compile_button", "media_128", "Compile")) {
-      // Don't allow to compile if it's already compiling
-      // (cus we gonna end up with threading issues!)
-      if (!compiling.get()) {
+      
+      if (ui.button("openscript_button", "doc_128", "Extern open")) {
         sound.playSound("select_any");
-        // If not showing code editor, we are most likely using an external ide to program this.
-        // So do not save what we have in memory.
-        compileCode(loadScript());
-      } 
-    }
-    
-    if (ui.button("openscript_button", "doc_128", "Extern open")) {
-      sound.playSound("select_any");
-      file.open(sketchiePath+"scripts/main.java");
-    }
-    
-    if (ui.button("automation_button", "cube_128", "Automation")) {
-      int l = automationBars.size();
-      String[] labels = new String[l+1];
-      Runnable[] actions = new Runnable[l+1];
-      
-      int i = 0;
-      for (AutomationBar bar : automationBars.values()) {
-        labels[i] = bar.name;
-        actions[i] = new Runnable() {public void run() {
-          addAutomationBarToDisplay(bar);
-        }};
-        i++;
+        file.open(sketchiePath+"scripts/main.java");
       }
       
-      labels[l] = "[Create automation bar]";
-      actions[l] = new Runnable() {public void run() {
-          // TODO: Open automation bar select menu.
-      }};
+      if (ui.button("automation_button", "automation_128", "Automation")) {
+        int l = automationBars.size();
+        String[] labels = new String[l+1];
+        Runnable[] actions = new Runnable[l+1];
+        
+        int i = 0;
+        for (AutomationBar bar : automationBars.values()) {
+          labels[i] = bar.name;
+          actions[i] = new Runnable() {public void run() {
+            addAutomationBarToDisplay(bar);
+          }};
+          i++;
+        }
+        
+        labels[l] = "[Create automation bar]";
+        actions[l] = new Runnable() {public void run() {
+          removePane(automationTypeSelectPane);
+          automationTypeSelectPane = new AutomationTypeSelectPane();
+          newPane(automationTypeSelectPane);
+        }};
+        
+        ui.createOptionsMenu(labels, actions);
+      }
       
-      ui.createOptionsMenu(labels, actions);
-    }
-    
-    if (ui.button("settings_button", "doc_128", "Sketch config")) {
-      sound.playSound("select_any");
-      //widthField.value = str(canvas.width);
-      //heightField.value = str(canvas.height);
-      //timeLengthField.value = str(timeLength/60.);
-      //bpmField.value = str(bpm);
-      //selectedField = null;
-      removePane(testPane);
-      testPane = new TestPane();
-      newPane(testPane);
+      if (ui.button("settings_button", "doc_128", "Sketch config")) {
+        sound.playSound("select_any");
+        //widthField.value = str(canvas.width);
+        //heightField.value = str(canvas.height);
+        //timeLengthField.value = str(timeLength/60.);
+        //bpmField.value = str(bpm);
+        //selectedField = null;
+        removePane(configPane);
+        configPane = new ConfigPane();
+        newPane(configPane);
+        priorityPane = configPane;
+        
+        // TODO: Close config menu
+      }
       
-      // TODO: Close config menu
-    }
-    
-    if (ui.button("render_button", "image_128", "Render")) {
-      sound.playSound("select_any");
-      selectedField = null;
-      framerateField.value = "60";
-      // TODO: Open render menu
-    }
-    
-    if (ui.button("folder_button", "folder_128", "Show files")) {
-      sound.playSound("select_any");
-      pause();
-      file.open(sketchiePath);
-    }
-    
-    if (ui.button("back_button", "back_arrow_128", "Explorer")) {
-      quit();
+      if (ui.button("render_button", "image_128", "Render")) {
+        sound.playSound("select_any");
+        
+        removePane(renderingPane);
+        renderingPane = new RenderOptionsPane();
+        newPane(renderingPane);
+      }
+      
+      if (ui.button("folder_button", "folder_128", "Show files")) {
+        sound.playSound("select_any");
+        pause();
+        file.open(sketchiePath);
+      }
+      
+      if (ui.button("back_button", "back_arrow_128", "Explorer")) {
+        quit();
+      }
     }
     
     if (compiling.get()) {
       ui.loadingIcon(WIDTH-64-10, myUpperBarWeight+64+10, 128);
     }
+
     
     gui.updateSpriteSystem();
     
@@ -2731,9 +2907,11 @@ public class Sketchpad extends Screen {
     previousScreen();
   }
   
+  float textBeatFlash = 0f;
+  int previousBeat = 0;
+  
   public void lowerBar() {
     //display.shader("fabric", "color", 0.43,0.4,0.42,1., "intensity", 0.1);
-    myLowerBarColor = color(78, 73, 73);
     super.lowerBar();
     app.resetShader();
     
@@ -2743,17 +2921,28 @@ public class Sketchpad extends Screen {
     // Display timeline
     // bar
     float y = HEIGHT-myLowerBarWeight;
-    app.fill(50);
+    app.fill(0xFF646370);
     app.noStroke();
     app.rect(BAR_X_START, y+(myLowerBarWeight/2)-2, BAR_X_LENGTH, 4);
+    
+    textBeatFlash -= display.getDelta()*0.08f;
+    textBeatFlash = max(textBeatFlash, 0f);
+    // Beat flash calculation
+    if (previousBeat != sound.beat) {
+      previousBeat = sound.beat;
+      textBeatFlash = 1f;
+    }
     
     // Times
     app.textAlign(LEFT, CENTER);
     app.fill(255);
     app.textFont(engine.DEFAULT_FONT, 20);
-    app.text("T "+PApplet.nf(time, 2, 2) + "\nB " + PApplet.nf(sound.beat+1, 3) + ":" + (sound.step+1),
-    BAR_X_START+BAR_X_LENGTH+10,
-    y+(myLowerBarWeight/2));
+    app.text("T "+PApplet.nf(time, 2, 2), BAR_X_START+BAR_X_LENGTH+10, y+(myLowerBarWeight*0.25));
+    
+    app.fill(lerp(255f, 230f, textBeatFlash), lerp(255f, 120f, textBeatFlash), lerp(255f, 200f, textBeatFlash));
+    app.text("B " + PApplet.nf(sound.beat+1, 3) + ":" + (sound.step+1), BAR_X_START+BAR_X_LENGTH+10, y+(myLowerBarWeight*0.75));
+    
+    
     
     float percent = time/timeLength;
     float timeNotchPos = BAR_X_START+BAR_X_LENGTH*percent;
@@ -2951,6 +3140,7 @@ public class Sketchpad extends Screen {
     rendering = false;
     converting = false;
     power.allowMinimizedMode = true;
+    sprites.interactable = true;
   }
   
   
@@ -3113,6 +3303,14 @@ public class Sketchpad extends Screen {
     if (engine.commandEquals(command, "/reload")) {
       loadSketchieInSeperateThread(sketchiePath);
       console.log("Reloading...");
+      return true;
+    }
+    else if (engine.commandEquals(command, "/testpane")) {
+      removePane(testPane);
+      testPane = new TestPane();
+      newPane(testPane);
+      
+      console.log("Opened test pane");
       return true;
     }
     else {

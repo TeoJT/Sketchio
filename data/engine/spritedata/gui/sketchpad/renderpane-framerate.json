@@ -1,0 +1,17 @@
+{
+  "h": 64,
+  "vy0": 246,
+  "vx1": 458,
+  "vy2": 310,
+  "vx0": 394,
+  "vy1": 246,
+  "mode": "SINGLE",
+  "vx3": 394,
+  "vx2": 458,
+  "vy3": 310,
+  "w": 64,
+  "name": "renderpane-framerate",
+  "x": 394,
+  "y": 246,
+  "locked": false
+}

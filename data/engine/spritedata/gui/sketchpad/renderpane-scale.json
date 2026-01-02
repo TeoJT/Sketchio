@@ -1,0 +1,17 @@
+{
+  "h": 64,
+  "vy0": 296,
+  "vx1": 438,
+  "vy2": 360,
+  "vx0": 374,
+  "vy1": 296,
+  "mode": "SINGLE",
+  "vx3": 374,
+  "vx2": 438,
+  "vy3": 360,
+  "w": 64,
+  "name": "renderpane-scale",
+  "x": 374,
+  "y": 296,
+  "locked": false
+}

@@ -1,0 +1,17 @@
+{
+  "h": 64,
+  "vy0": 296,
+  "vx1": 520,
+  "vy2": 360,
+  "vx0": 456,
+  "vy1": 296,
+  "mode": "SINGLE",
+  "vx3": 456,
+  "vx2": 520,
+  "vy3": 360,
+  "w": 64,
+  "name": "configpane-height",
+  "x": 456,
+  "y": 296,
+  "locked": false
+}

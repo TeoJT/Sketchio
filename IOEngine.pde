@@ -36,5 +36,10 @@ public class IOEngine extends TWEngine {
       displayInputPrompt();
     }
   }
+  
+  public void engine() {
+    super.engine();
+    allowShowCommandPrompt = !input.typingActive();
+  }
     
 }
